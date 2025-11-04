@@ -582,14 +582,13 @@ class AutoNumberMonitor:
                                 if user_stats:
                                     await self.application.bot.send_message(
                                         user_id,
-                                        f"🤖 **অটো ডিটেক্ট: নতুন নাম্বার অনলাইন!**\n\n"
+                                        f"🤖 **নতুন নাম্বার অনলাইন!**\n\n"
                                         f"📱 নাম্বার: `{phone}`\n"
                                         f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
                                         f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
                                         f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                                        f"🌐 ওয়েবসাইট: {website}\n\n"
                                         f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                                        f"⏰ এই নাম্বারটি এখন ১ ঘন্টার জন্য restricted।",
+                                        f"⏰ এই নাম্বারটি এখন Logout করে দিন.!",
                                         parse_mode='Markdown'
                                     )
                                     logger.info(f"📨 Auto notification sent to user {user_id} for new online number {phone}")
@@ -601,7 +600,7 @@ class AutoNumberMonitor:
                 break
             except Exception as e:
                 logger.error(f"❌ Error in auto monitoring for user {user_id}: {str(e)}")
-                await asyncio.sleep(60)  # Error হলে ১ মিনিট অপেক্ষা করুন
+                await asyncio.sleep(30)  # Error হলে ১ মিনিট অপেক্ষা করুন
 
     def is_user_monitoring(self, user_id: int):
         """চেক করুন ইউজারের মনিটরিং চলছে কিনা"""
@@ -649,7 +648,7 @@ class NumberTracking:
         current_time = time.time()
         
         # ১ ঘন্টা (3600 সেকেন্ড) অপেক্ষা করতে হবে
-        if current_time - last_submit_time >= 3600:
+        if current_time - last_submit_time >= 86400:
             # সময় পার হয়ে গেলে রেকর্ড ডিলিট করুন
             del self.tracking_data[user_id_str][phone_number]
             self.save_data()
@@ -1143,25 +1142,24 @@ def detect_platform_from_user_agent(user_agent):
         return 'default'
 
 def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
-    link_text = f"Link {selected_website} WhatsApp"
-    number_list_text = f"{selected_website} Number List"
+    link_text = f"Link WhatsApp"
     device_set = device_manager.exists(str(user_id))
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
     proxy_set = device_set and device_manager.load(str(user_id)).proxy is not None
-    set_proxy_text = f"{'✅ ' if proxy_set else ''}Set Proxy"
+    set_proxy_text = f"{'✅ ' if proxy_set else ''}"
     
     keyboard = [
-        [KeyboardButton("Log in Account"), KeyboardButton("Register Account")],
+        [KeyboardButton("Log in Account")],
         [KeyboardButton(link_text), KeyboardButton(number_list_text)],
         [KeyboardButton("My Balance"), KeyboardButton("Withdraw")]
     ]
     
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("👑 Admin Panel")])
+        keyboard.append([KeyboardButton("Admin Panel")])
     
     keyboard.extend([
-        [KeyboardButton("Reset All"), KeyboardButton(set_user_agent_text)],
+        [KeyboardButton(set_user_agent_text)],
         [KeyboardButton(set_proxy_text)]
     ])
     
@@ -2066,7 +2064,7 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         if new_online_numbers:
             output.append(f"🎉 নতুন অনলাইন: {len(new_online_numbers)} টি নাম্বার")
 
-        output.append(f"\n📱 Phone Numbers Status ({website_config['name']}):")
+        output.append(f"\n📱 Phone Numbers Status:")
 
         for idx, phone_data in enumerate(phones, 1):
             phone = "+1" + str(phone_data.get("phone", ""))[-10:]
@@ -2430,7 +2428,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['selected_website'] = text
             context.user_data['state'] = 'awaiting_login'
             await update.message.reply_text(
-                f"✅ Selected website: {text}\nPlease enter your token or username:password for the {text} account.",
+                f"✅ Please enter your token.",
                 reply_markup=get_main_keyboard(text, user_id)
             )
         elif user_state == 'awaiting_website_selection_register':
@@ -2452,7 +2450,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Log in Account":
         context.user_data['state'] = 'awaiting_website_selection_login'
         await update.message.reply_text(
-            f"🌐 Please select a website for account login:",
+            f"🌐 Please select a Link Task:",
             reply_markup=get_website_selection_keyboard()
         )
         return
@@ -2816,15 +2814,15 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     # ✅ ১ ঘন্টার restriction চেক (শুধুমাত্র successful নাম্বারের জন্য)
     if not number_tracker.can_submit_number(normalized_phone, user_id):
         remaining_time = number_tracker.get_remaining_time(normalized_phone, user_id)
-        hours = remaining_time // 3600
-        minutes = (remaining_time % 3600) // 60
+        hours = remaining_time // 86400
+        minutes = (remaining_time % 86400) // 1440
         
         await update.message.reply_text(
             f"⏰ **এই নাম্বারটি আবার submit করতে হবে:**\n\n"
             f"📱 নাম্বার: `{normalized_phone}`\n"
             f"⏳ বাকি সময়: {hours} ঘন্টা {minutes} মিনিট\n\n"
             f"ℹ️ এই নাম্বারটি ইতিমধ্যে successfulভাবে online হয়েছে।\n"
-            f"একই নাম্বার ১ ঘন্টার মধ্যে আবার submit করা যাবে না।",
+            f"একই নাম্বার 24 ঘন্টার মধ্যে আবার submit করা যাবে না।",
             parse_mode='Markdown',
             reply_markup=get_main_keyboard(selected_website, user_id)
         )
@@ -2847,14 +2845,14 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     phone_encrypted = await encrypt_phone(normalized_phone)
 
     # ⏳ স্ট্যাটাস দেখানো
-    status_msg = await update.message.reply_text("📤 ভেরিফিকেশন কোড পাঠানো হচ্ছে...")
+    status_msg = await update.message.reply_text("📤 রিকোয়েস্ট পাঠানো হচ্ছে...")
 
     # ✅ কোড পাঠানো (অটো area_code সহ)
     response = await send_code(token, phone_encrypted, website_config, device_name, phone_plain=normalized_phone)
 
     # 🔎 রেসপন্স চেক
     if response.get("code") == 1:
-        await status_msg.edit_text("✅ ভেরিফিকেশন কোড সফলভাবে পাঠানো হয়েছে! অনুগ্রহ করে অপেক্ষা করুন...")
+        await status_msg.edit_text("✅ অনুগ্রহ করে অপেক্ষা করুন...")
         await asyncio.sleep(1)
         otp_response = await get_code(token, normalized_phone, website_config, device_name)
         if otp_response and otp_response.get("code") == 1:
@@ -2862,10 +2860,9 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
             
             # ✅ OTP পাওয়ার পর ইউজারকে মেসেজ দিন
             await update.message.reply_text(
-                f"📩 **OTP কোড প্রাপ্ত!**\n\n"
+                f"📩 **Link কোড!**\n\n"
                 f"📱 নাম্বার: `{normalized_phone}`\n"
-                f"🔢 OTP কোড: `{otp}`\n\n"
-                f"✅ এই নাম্বারটি successfulভাবে submit হয়েছে।\n"
+                f"🔢 Link কোড: `{otp}`\n\n"
                 f"নাম্বারটি online হলে আপনাকে স্বয়ংক্রিয়ভাবে নোটিফিকেশন দেওয়া হবে।",
                 parse_mode='Markdown',
                 reply_markup=get_main_keyboard(selected_website, user_id)
@@ -2877,7 +2874,7 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
             logger.info(f"OTP received for phone {normalized_phone} by user {user_id}")
             
         else:
-            error_msg = "কোড পাওয়া যায়নি। সার্ভার থেকে কোনো OTP ফেরত আসেনি।"
+            error_msg = "কোড পাওয়া যায়নি। সার্ভার থেকে কোনো Link code ফেরত আসেনি।"
             await update.message.reply_text(
                 f"❌ {error_msg}",
                 reply_markup=get_main_keyboard(selected_website, user_id)
