@@ -398,15 +398,15 @@ ANDROID_UAS = [
 
 # Website configurations
 WEBSITE_CONFIGS = {
-    "TASKS": {
-        "name": "TASKS",
-        "api_domain": "https://task33.club/",
-        "origin": "https://task33.com",
-        "referer": "https://task33.com/",
+    "TASKS 1": {
+        "name": "TASKS 1",
+        "api_domain": "https://diy22.club/",
+        "origin": "https://diy22.net",
+        "referer": "https://diy22.net/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
-        "phone_list_url": "https://task33.club/api/ws_phone/phoneList",
+        "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     }
