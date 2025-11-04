@@ -3265,60 +3265,126 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # If error handler itself has error, just log it
         logger.error(f"Error in error handler: {str(e)}")
 
+# ==============================================
+# MAIN FUNCTION - তোমার existing main() function
+# ==============================================
+
 def main():
     global auto_monitor
-    app = Application.builder().token(TELEGRAM_TOKEN).build()
-    
-    # Initialize auto monitor
-    auto_monitor = AutoNumberMonitor(app)
-    logger.info("✅ Auto Number Monitor initialized")
-
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("login", login_command))
-    app.add_handler(CommandHandler("regs", get_registrations))
-    app.add_handler(CommandHandler("markused", mark_used))
-    app.add_handler(CommandHandler("deleteused", delete_used))
-    app.add_handler(CommandHandler("stop", stop))
-    
-    # Balance commands
-    app.add_handler(CommandHandler("balance", balance_command))
-    app.add_handler(CommandHandler("withdraw", withdraw_command))
-    
-    # Admin commands
-    app.add_handler(CommandHandler("admin", admin_command))
-    app.add_handler(CommandHandler("setrate", set_balance_rate_command))
-    app.add_handler(CommandHandler("userbalance", user_balance_command))
-    app.add_handler(CommandHandler("setbalance", set_user_balance_command))
-    app.add_handler(CommandHandler("allusers", all_users_command))
-    app.add_handler(CommandHandler("todaystats", today_stats_command))
-    app.add_handler(CommandHandler("pendingwithdrawals", pending_withdrawals_command))
-    app.add_handler(CommandHandler("approve", approve_withdrawal_command))
-    app.add_handler(CommandHandler("reject", reject_withdrawal_command))
-    
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    app.add_handler(CallbackQueryHandler(handle_callback_query))
-    
-    # Use the safe error handler
-    app.add_error_handler(error_handler)
-
-    logger.info("🤖 Bot is starting with auto monitoring system...")
-    print("✅ Bot started successfully!")
-    print("📱 Features:")
-    print("   - Direct phone number input")
-    print("   - Auto monitoring every 30 seconds") 
-    print("   - Instant notifications for new numbers")
-    print("   - Balance system with withdrawals")
-    
     try:
+        app = Application.builder().token(TELEGRAM_TOKEN).build()
+        
+        # Initialize auto monitor
+        auto_monitor = AutoNumberMonitor(app)
+        logger.info("✅ Auto Number Monitor initialized")
+
+        # Add all handlers
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("login", login_command))
+        app.add_handler(CommandHandler("regs", get_registrations))
+        app.add_handler(CommandHandler("markused", mark_used))
+        app.add_handler(CommandHandler("deleteused", delete_used))
+        app.add_handler(CommandHandler("stop", stop))
+        
+        # Balance commands
+        app.add_handler(CommandHandler("balance", balance_command))
+        app.add_handler(CommandHandler("withdraw", withdraw_command))
+        
+        # Admin commands
+        app.add_handler(CommandHandler("admin", admin_command))
+        app.add_handler(CommandHandler("setrate", set_balance_rate_command))
+        app.add_handler(CommandHandler("userbalance", user_balance_command))
+        app.add_handler(CommandHandler("setbalance", set_user_balance_command))
+        app.add_handler(CommandHandler("allusers", all_users_command))
+        app.add_handler(CommandHandler("todaystats", today_stats_command))
+        app.add_handler(CommandHandler("pendingwithdrawals", pending_withdrawals_command))
+        app.add_handler(CommandHandler("approve", approve_withdrawal_command))
+        app.add_handler(CommandHandler("reject", reject_withdrawal_command))
+        
+        app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+        app.add_handler(CallbackQueryHandler(handle_callback_query))
+        
+        # Use the safe error handler
+        app.add_error_handler(error_handler)
+
+        logger.info("🤖 Bot is starting with auto monitoring system...")
+        print("✅ Bot started successfully!")
+        print("📱 Features:")
+        print("   - Direct phone number input")
+        print("   - Auto monitoring every 30 seconds") 
+        print("   - Instant notifications for new numbers")
+        print("   - Balance system with withdrawals")
+        
+        # Start polling
         app.run_polling(
             allowed_updates=Update.ALL_TYPES,
             poll_interval=1,
             timeout=30,
             drop_pending_updates=True
         )
+        
     except Exception as e:
-        logger.error(f"Bot crashed: {str(e)}")
-        print(f"❌ Bot crashed: {str(e)}")
+        logger.error(f"Bot failed to start: {str(e)}")
+        print(f"❌ Bot failed: {str(e)}")
+        raise
+
+# ==============================================
+# RENDER.COM SETUP - এই অংশটা NEW যোগ করতে হবে
+# ==============================================
+
+# Render.com port binding setup
+async def health_check(request):
+    """Health check endpoint for Render"""
+    return web.Response(text="Bot is running healthy! ✅")
+
+def setup_web_server():
+    """Web server setup for Render"""
+    app_web = web.Application()
+    app_web.router.add_get('/', health_check)
+    app_web.router.add_get('/health', health_check)
+    return app_web
+
+def start_bot():
+    """Start the Telegram bot"""
+    try:
+        print("🚀 Starting Telegram Bot...")
+        main()
+    except Exception as e:
+        print(f"❌ Bot failed to start: {e}")
+        sys.exit(1)
+
+# ==============================================
+# FINAL EXECUTION - এই লাইনগুলো ফাইলের একদম শেষে
+# ==============================================
+
+if __name__ == "__main__":
+    # Check if running on Render
+    if os.environ.get('RENDER') or os.environ.get('PORT'):
+        print("🌐 Running on Render.com - Setting up web server...")
+        
+        # Get port from environment or default to 8080
+        port = int(os.environ.get('PORT', 8080))
+        print(f"🔌 Using port: {port}")
+        
+        # Start web server in a separate thread
+        import threading
+        
+        def run_web_server():
+            app_web = setup_web_server()
+            web.run_app(app_web, host='0.0.0.0', port=port)
+        
+        # Start web server in background thread
+        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        web_thread.start()
+        print("✅ Web server started for health checks")
+        
+        # Start the bot
+        print("🤖 Starting Telegram Bot...")
+        start_bot()
+        
+    else:
+        print("💻 Running locally...")
+        start_bot()
 
 if __name__ == "__main__":
     main()
