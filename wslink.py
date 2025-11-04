@@ -1140,29 +1140,24 @@ def detect_platform_from_user_agent(user_agent):
         return 'linux'
     else:
         return 'default'
-
 def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
-    link_text = f"Link WhatsApp"
+    link_text = f"Link {selected_website} WhatsApp"
     device_set = device_manager.exists(str(user_id))
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
-    proxy_set = device_set and device_manager.load(str(user_id)).proxy is not None
-    set_proxy_text = f"{'✅ ' if proxy_set else ''}"
-    
+
     keyboard = [
-        [KeyboardButton("Log in Account")],
-        [KeyboardButton(link_text), KeyboardButton(number_list_text)],
+        [KeyboardButton("Log in Account")],  # Removed Register Account
+        [KeyboardButton(link_text)],         # Removed Number List
         [KeyboardButton("My Balance"), KeyboardButton("Withdraw")]
     ]
-    
+
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("Admin Panel")])
-    
-    keyboard.extend([
-        [KeyboardButton(set_user_agent_text)],
-        [KeyboardButton(set_proxy_text)]
-    ])
-    
+        keyboard.append([KeyboardButton("👑 Admin Panel")])
+
+    # Only keep Set User Agent
+    keyboard.append([KeyboardButton(set_user_agent_text)])
+
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
 def get_website_selection_keyboard():
