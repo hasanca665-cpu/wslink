@@ -3347,28 +3347,22 @@ def setup_web_server():
     app_web.router.add_get("/health", health_check)
     return app_web
 
-def start_bot():
+def start_bot_blocking():
     try:
         print("🚀 Starting Telegram Bot...")
-        main()  # your existing bot start function
+        main()  # Your main() starts bot.run_polling()
     except Exception as e:
         print(f"❌ Bot failed to start: {e}")
         sys.exit(1)
 
-async def start_bot_async():
-    loop = asyncio.get_event_loop()
-    await loop.run_in_executor(None, start_bot)
-
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
-    print(f"🌐 Starting web server on port {port} (Render detected)")
+    print(f"🌐 Render environment detected — using port {port}")
 
-    # Setup aiohttp app
+    # 1️⃣ Start bot in a background thread (so it doesn't block)
+    bot_thread = threading.Thread(target=start_bot_blocking, daemon=True)
+    bot_thread.start()
+
+    # 2️⃣ Run web server on main thread so Render detects the port
     app_web = setup_web_server()
-
-    # Start Telegram bot concurrently (in background)
-    loop = asyncio.get_event_loop()
-    loop.create_task(start_bot_async())
-
-    # Run web server in the main thread (this avoids the signal handler error)
     web.run_app(app_web, host="0.0.0.0", port=port)
