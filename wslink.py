@@ -3332,56 +3332,43 @@ def main():
 # RENDER.COM SETUP - এই অংশটা NEW যোগ করতে হবে
 # ==============================================
 
-# Render.com port binding setup
+from aiohttp import web
+import asyncio
+import threading
+import os
+import sys
+
 async def health_check(request):
-    """Health check endpoint for Render"""
     return web.Response(text="Bot is running healthy! ✅")
 
 def setup_web_server():
-    """Web server setup for Render"""
     app_web = web.Application()
-    app_web.router.add_get('/', health_check)
-    app_web.router.add_get('/health', health_check)
+    app_web.router.add_get("/", health_check)
+    app_web.router.add_get("/health", health_check)
     return app_web
 
 def start_bot():
-    """Start the Telegram bot"""
     try:
         print("🚀 Starting Telegram Bot...")
-        main()
+        main()  # your existing bot start function
     except Exception as e:
         print(f"❌ Bot failed to start: {e}")
         sys.exit(1)
 
-# ==============================================
-# FINAL EXECUTION - এই লাইনগুলো ফাইলের একদম শেষে
-# ==============================================
+async def start_bot_async():
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, start_bot)
 
 if __name__ == "__main__":
-    # Check if running on Render
-    if os.environ.get('RENDER') or os.environ.get('PORT'):
-        print("🌐 Running on Render.com - Setting up web server...")
-        
-        # Get port from environment or default to 8080
-        port = int(os.environ.get('PORT', 8080))
-        print(f"🔌 Using port: {port}")
-        
-        # Start web server in a separate thread
-        import threading
-        
-        def run_web_server():
-            app_web = setup_web_server()
-            web.run_app(app_web, host='0.0.0.0', port=port)
-        
-        # Start web server in background thread
-        web_thread = threading.Thread(target=run_web_server, daemon=True)
-        web_thread.start()
-        print("✅ Web server started for health checks")
-        
-        # Start the bot
-        print("🤖 Starting Telegram Bot...")
-        start_bot()
-        
-    else:
-        print("💻 Running locally...")
-        start_bot()
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🌐 Starting web server on port {port} (Render detected)")
+
+    # Setup aiohttp app
+    app_web = setup_web_server()
+
+    # Start Telegram bot concurrently (in background)
+    loop = asyncio.get_event_loop()
+    loop.create_task(start_bot_async())
+
+    # Run web server in the main thread (this avoids the signal handler error)
+    web.run_app(app_web, host="0.0.0.0", port=port)
