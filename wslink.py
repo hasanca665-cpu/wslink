@@ -587,8 +587,9 @@ class AutoNumberMonitor:
                                         f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
                                         f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
                                         f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
+                                        f"🌐 ওয়েবসাইট: {website}\n\n"
                                         f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                                        f"⏰ এই নাম্বারটি এখন Logout করে দিন.!",
+                                        f"⏰ এই নাম্বারটি এখন লগআউট করে দিন.!",
                                         parse_mode='Markdown'
                                     )
                                     logger.info(f"📨 Auto notification sent to user {user_id} for new online number {phone}")
@@ -600,7 +601,7 @@ class AutoNumberMonitor:
                 break
             except Exception as e:
                 logger.error(f"❌ Error in auto monitoring for user {user_id}: {str(e)}")
-                await asyncio.sleep(30)  # Error হলে ১ মিনিট অপেক্ষা করুন
+                await asyncio.sleep(60)  # Error হলে ১ মিনিট অপেক্ষা করুন
 
     def is_user_monitoring(self, user_id: int):
         """চেক করুন ইউজারের মনিটরিং চলছে কিনা"""
@@ -677,7 +678,7 @@ class NumberTracking:
         last_submit_time = self.tracking_data[user_id_str][phone_number]
         current_time = time.time()
         elapsed = current_time - last_submit_time
-        remaining = 3600 - elapsed
+        remaining = 86400 - elapsed
         
         return max(0, int(remaining))
 
@@ -707,7 +708,7 @@ class BalanceManager:
                     "balance_per_online": 0.50, 
                     "admin_id": 5624278091,
                     "min_withdrawal": 50.0,
-                    "auto_reset_daily": True
+                    "auto_reset_daily": False
                 }
             
             # User balances লোড
@@ -748,7 +749,7 @@ class BalanceManager:
                 "balance_per_online": 0.50, 
                 "admin_id": 5624278091,
                 "min_withdrawal": 50.0,
-                "auto_reset_daily": True
+                "auto_reset_daily": False
             }
             self.user_balances = {}
             self.withdrawal_requests = {}
@@ -1140,22 +1141,22 @@ def detect_platform_from_user_agent(user_agent):
         return 'linux'
     else:
         return 'default'
+
 def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     link_text = f"Link {selected_website} WhatsApp"
     device_set = device_manager.exists(str(user_id))
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
 
     keyboard = [
-        [KeyboardButton("Log in Account")],  # Removed Register Account
-        [KeyboardButton(link_text)],         # Removed Number List
-        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")]
+        [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # side by side
+        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")]       # another row
     ]
 
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("👑 Admin Panel")])
+        keyboard.append([KeyboardButton("Admin Panel")])
 
-    # Only keep Set User Agent
+    # Only keep Set User Agent in a new row
     keyboard.append([KeyboardButton(set_user_agent_text)])
 
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
@@ -1293,7 +1294,6 @@ def encrypt_username(plain_text: str) -> str:
     encrypted_bytes = cipher.encrypt(padded_text)
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
-
 async def login_with_credentials(username, password, website_config, device_name):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -1361,7 +1361,7 @@ async def login_with_credentials(username, password, website_config, device_name
                         "response": None
                     }
                 await asyncio.sleep(1)
-                
+
 async def register_account(website_config, phone_number, password, confirm_password, invite_code, device_name, reg_host):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -1398,7 +1398,7 @@ async def register_account(website_config, phone_number, password, confirm_passw
                             if attempt == MAX_RETRIES - 1:
                                 return {
                                     "code": -1,
-                                    "msg": "🌐 Registration failed",
+                                    "msg": f"Registration failed with HTTP status {response.status}",
                                     "data": None
                                 }
                             await asyncio.sleep(1)
@@ -1411,7 +1411,7 @@ async def register_account(website_config, phone_number, password, confirm_passw
                 if attempt == MAX_RETRIES - 1:
                     return {
                         "code": -1,
-                        "msg": "⏰ Registration timeout",
+                        "msg": f"Registration request timed out after {REQUEST_TIMEOUT} seconds",
                         "data": None
                     }
                 await asyncio.sleep(1)
@@ -1420,14 +1420,14 @@ async def register_account(website_config, phone_number, password, confirm_passw
                 if attempt == MAX_RETRIES - 1:
                     return {
                         "code": -1,
-                        "msg": "🚫 Registration failed",
+                        "msg": f"Registration failed: {str(e)}",
                         "data": None
                     }
                 await asyncio.sleep(1)
         logger.error(f"Registration failed after {MAX_RETRIES} attempts for {website_config['name']}")
         return {
             "code": -1,
-            "msg": "🚫 Registration failed",
+            "msg": f"Registration failed after {MAX_RETRIES} attempts",
             "data": None
         }
 
@@ -1882,7 +1882,6 @@ async def pending_withdrawals_command(update: Update, context: ContextTypes.DEFA
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
-
 async def get_phone_list(token, account_type, website_config, device_name, user_id=None, context=None):
     async with await device_manager.build_session(device_name) as session:
         if not token or len(token) < 10:
@@ -2036,7 +2035,7 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
                             f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
                             f"🌐 ওয়েবসাইট: {website_config['name']}\n\n"
                             f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                            f"⏰ এই নাম্বারটি এখন ১ ঘন্টার জন্য restricted।",
+                            f"⏰ এই নাম্বারটি এখন লগ আউট করে দিন.!",
                             parse_mode='Markdown'
                         )
                         notification_sent = True
@@ -2059,7 +2058,7 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         if new_online_numbers:
             output.append(f"🎉 নতুন অনলাইন: {len(new_online_numbers)} টি নাম্বার")
 
-        output.append(f"\n📱 Phone Numbers Status:")
+        output.append(f"\n📱 Phone Numbers Status ({website_config['name']}):")
 
         for idx, phone_data in enumerate(phones, 1):
             phone = "+1" + str(phone_data.get("phone", ""))[-10:]
@@ -2431,7 +2430,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context.user_data['register_account_type'] = 'main'
             context.user_data['state'] = 'registering'
             await update.message.reply_text(
-                f"✅ Selected website: {text}\n📱 ফোন নাম্বার দিন:",
+                f"📱 ফোন নাম্বার দিন:",
                 reply_markup=get_main_keyboard(selected_website, user_id)
             )
         return
@@ -2445,7 +2444,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "Log in Account":
         context.user_data['state'] = 'awaiting_website_selection_login'
         await update.message.reply_text(
-            f"🌐 Please select a Link Task:",
+            f"🌐 Please select a Task for account login:",
             reply_markup=get_website_selection_keyboard()
         )
         return
@@ -2809,15 +2808,15 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     # ✅ ১ ঘন্টার restriction চেক (শুধুমাত্র successful নাম্বারের জন্য)
     if not number_tracker.can_submit_number(normalized_phone, user_id):
         remaining_time = number_tracker.get_remaining_time(normalized_phone, user_id)
-        hours = remaining_time // 86400
-        minutes = (remaining_time % 86400) // 1440
+        hours = remaining_time // 3600
+        minutes = (remaining_time % 3600) // 60
         
         await update.message.reply_text(
             f"⏰ **এই নাম্বারটি আবার submit করতে হবে:**\n\n"
             f"📱 নাম্বার: `{normalized_phone}`\n"
             f"⏳ বাকি সময়: {hours} ঘন্টা {minutes} মিনিট\n\n"
             f"ℹ️ এই নাম্বারটি ইতিমধ্যে successfulভাবে online হয়েছে।\n"
-            f"একই নাম্বার 24 ঘন্টার মধ্যে আবার submit করা যাবে না।",
+            f"একই নাম্বার 24 ঘন্টার পর আবার submit করা যাবে না।",
             parse_mode='Markdown',
             reply_markup=get_main_keyboard(selected_website, user_id)
         )
@@ -2840,14 +2839,14 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     phone_encrypted = await encrypt_phone(normalized_phone)
 
     # ⏳ স্ট্যাটাস দেখানো
-    status_msg = await update.message.reply_text("📤 রিকোয়েস্ট পাঠানো হচ্ছে...")
+    status_msg = await update.message.reply_text("📤 ভেরিফিকেশন কোড পাঠানো হচ্ছে...")
 
     # ✅ কোড পাঠানো (অটো area_code সহ)
     response = await send_code(token, phone_encrypted, website_config, device_name, phone_plain=normalized_phone)
 
     # 🔎 রেসপন্স চেক
     if response.get("code") == 1:
-        await status_msg.edit_text("✅ অনুগ্রহ করে অপেক্ষা করুন...")
+        await status_msg.edit_text("✅ ভেরিফিকেশন কোড সফলভাবে পাঠানো হয়েছে! অনুগ্রহ করে অপেক্ষা করুন...")
         await asyncio.sleep(1)
         otp_response = await get_code(token, normalized_phone, website_config, device_name)
         if otp_response and otp_response.get("code") == 1:
@@ -2858,6 +2857,7 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
                 f"📩 **Link কোড!**\n\n"
                 f"📱 নাম্বার: `{normalized_phone}`\n"
                 f"🔢 Link কোড: `{otp}`\n\n"
+                
                 f"নাম্বারটি online হলে আপনাকে স্বয়ংক্রিয়ভাবে নোটিফিকেশন দেওয়া হবে।",
                 parse_mode='Markdown',
                 reply_markup=get_main_keyboard(selected_website, user_id)
@@ -3227,32 +3227,53 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_main_keyboard(selected_website, user_id)
     )
 
-async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id if update.message else "Unknown"
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
     try:
-        raise context.error
-    except NetworkError:
-        logger.error(f"Network error for user {user_id}: {context.error}")
-        if update.message:
-            await update.message.reply_text(
-                "❌ Network error occurred. Please try again later.",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
-    except BadRequest as e:
-        logger.error(f"Bad request error for user {user_id}: {str(e)}")
-        if update.message:
-            await update.message.reply_text(
-                f"❌ Bad request: {str(e)}",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
+        # Safely get user_id with multiple fallbacks
+        user_id = "Unknown"
+        
+        if hasattr(update, 'message') and update.message:
+            user_id = update.message.from_user.id
+        elif hasattr(update, 'callback_query') and update.callback_query:
+            user_id = update.callback_query.from_user.id
+        elif hasattr(update, 'effective_user') and update.effective_user:
+            user_id = update.effective_user.id
+        elif hasattr(update, 'message') and hasattr(update.message, 'from_user'):
+            user_id = update.message.from_user.id
+        
+        selected_website = DEFAULT_SELECTED_WEBSITE
+        
+        # Get the actual error
+        error = getattr(context, 'error', None)
+        if not error:
+            return
+            
+        error_msg = str(error)
+        
+        # Handle specific errors
+        if "Conflict" in error_msg:
+            logger.error(f"409 Conflict error for user {user_id}")
+            return  # Don't send message for conflict errors
+        elif isinstance(error, NetworkError):
+            logger.error(f"Network error for user {user_id}: {error_msg}")
+            if hasattr(update, 'message') and update.message:
+                await update.message.reply_text(
+                    "🌐 Network connection error",
+                    reply_markup=get_main_keyboard(selected_website, user_id)
+                )
+        elif isinstance(error, BadRequest):
+            logger.error(f"Bad request error for user {user_id}: {error_msg}")
+            if hasattr(update, 'message') and update.message:
+                await update.message.reply_text(
+                    "🚫 Invalid request",
+                    reply_markup=get_main_keyboard(selected_website, user_id)
+                )
+        else:
+            logger.error(f"Unexpected error for user {user_id}: {error_msg}")
+            # Don't send message for unknown errors to avoid spam
+            
     except Exception as e:
-        logger.error(f"Unexpected error for user {user_id}: {str(e)}")
-        if update.message:
-            await update.message.reply_text(
-                f"❌ An unexpected error occurred: {str(e)}",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
+        logger.error(f"Critical error in error handler: {str(e)}")
 
 # ==============================================
 # SIMPLE SOLUTION - BOT PRIORITY
