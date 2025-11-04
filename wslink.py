@@ -1,4 +1,4 @@
-from aiohttp import web
+
 import os
 import re
 import json
@@ -3231,46 +3231,34 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Global error handler"""
+    user_id = update.message.from_user.id if update.message else "Unknown"
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
     try:
-        # Safely get user_id
-        user_id = "Unknown"
-        if update:
-            if update.message:
-                user_id = update.message.from_user.id if update.message.from_user else "Unknown"
-            elif update.callback_query:
-                user_id = update.callback_query.from_user.id if update.callback_query.from_user else "Unknown"
-            elif update.edited_message:
-                user_id = update.edited_message.from_user.id if update.edited_message.from_user else "Unknown"
-        
-        # Safely get error details
-        error_msg = str(context.error) if context.error else "Unknown error"
-        
-        logger.error(f"Unexpected error for user {user_id}: {error_msg}")
-        
-        # Log full traceback for debugging
-        logger.error(f"Full traceback: {context.error.__class__.__name__}: {error_msg}")
-        
-        # Only send message to user if we have a valid update with message
-        if update and update.message:
-            try:
-                await update.message.reply_text(
-                    f"❌ An unexpected error occurred. Please try again later.\n\nError: {error_msg}",
-                    reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
-                )
-            except Exception as e:
-                logger.error(f"Failed to send error message to user {user_id}: {str(e)}")
-                
+        raise context.error
+    except NetworkError:
+        logger.error(f"Network error for user {user_id}: {context.error}")
+        if update.message:
+            await update.message.reply_text(
+                "❌ Network error occurred. Please try again later.",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+    except BadRequest as e:
+        logger.error(f"Bad request error for user {user_id}: {str(e)}")
+        if update.message:
+            await update.message.reply_text(
+                f"❌ Bad request: {str(e)}",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
     except Exception as e:
-        # If error handler itself has error, just log it
-        logger.error(f"Error in error handler: {str(e)}")
+        logger.error(f"Unexpected error for user {user_id}: {str(e)}")
+        if update.message:
+            await update.message.reply_text(
+                f"❌ An unexpected error occurred: {str(e)}",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
 
 # ==============================================
-# MAIN FUNCTION - তোমার existing main() function
-# ==============================================
-
-# ==============================================
-# MAIN FUNCTION - FIXED VERSION FOR RENDER.COM
+# SIMPLE SOLUTION - BOT PRIORITY
 # ==============================================
 
 def main():
@@ -3333,60 +3321,46 @@ def main():
         raise
 
 # ==============================================
-# RENDER.COM SETUP - FIXED VERSION
+# BASIC WEB SERVER FOR RENDER
 # ==============================================
 
-from aiohttp import web
-import asyncio
+from http.server import BaseHTTPRequestHandler, HTTPServer
 import threading
-import os
-import sys
 
-async def health_check(request):
-    return web.Response(text="Bot is running healthy! ✅")
+class HealthHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == '/health' or self.path == '/':
+            self.send_response(200)
+            self.send_header('Content-type', 'text/plain')
+            self.end_headers()
+            self.wfile.write(b'Bot is running!')
+        else:
+            self.send_response(404)
+            self.end_headers()
+    
+    def log_message(self, format, *args):
+        # Disable access logs
+        return
 
-def setup_web_server():
-    app_web = web.Application()
-    app_web.router.add_get("/", health_check)
-    app_web.router.add_get("/health", health_check)
-    return app_web
-
-def start_bot_in_thread():
-    """Start the bot in a separate thread"""
-    try:
-        print("🚀 Starting Telegram Bot in thread...")
-        main()
-    except Exception as e:
-        print(f"❌ Bot failed to start: {e}")
-        # Don't exit the whole process, just log the error
-
-def start_web_server():
-    """Start the web server for health checks"""
+def run_web_server():
+    """Run a simple web server in a separate thread"""
     port = int(os.environ.get("PORT", 8080))
-    print(f"🌐 Starting web server on port {port}")
-    
-    app_web = setup_web_server()
-    
-    # Run web server (this will block)
-    web.run_app(
-        app_web, 
-        host="0.0.0.0", 
-        port=port,
-        print=None  # Disable default print messages
-    )
+    server = HTTPServer(('0.0.0.0', port), HealthHandler)
+    print(f"🌐 Web server running on port {port}")
+    server.serve_forever()
 
 if __name__ == "__main__":
-    # Check if we're running on Render (has PORT environment variable)
+    # Check if we're on Render
     if "PORT" in os.environ:
-        print("🚀 Render.com environment detected - starting both bot and web server")
+        print("🚀 Render.com environment detected - starting bot and web server")
         
-        # Start bot in a separate thread
-        bot_thread = threading.Thread(target=start_bot_in_thread, daemon=True)
-        bot_thread.start()
+        # Start web server in background thread
+        web_thread = threading.Thread(target=run_web_server, daemon=True)
+        web_thread.start()
         
-        # Start web server in main thread (this will block)
-        start_web_server()
+        # Start bot in main thread
+        main()
     else:
-        # Local development - just start the bot
+        # Local development
         print("🚀 Local development - starting bot only")
         main()
