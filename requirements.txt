@@ -1,0 +1,7 @@
+python-telegram-bot
+aiohttp
+aiofiles
+pycryptodome
+pytz
+requests
+psutil
