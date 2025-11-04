@@ -409,6 +409,17 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
+    },"TASK 2": {
+        "name": "TASK 2",
+        "api_domain": "https://sms323.club/",
+        "origin": "https://sms323.com",
+        "referer": "https://sms323.com/",
+        "login_path": "api/user/signIn",
+        "send_code_path": "api/ws_phone/sendCode",
+        "get_code_path": "api/ws_phone/getCode",
+        "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
+        "signup_path": "api/user/signUp",
+        "referral_field": "invite_code"
     }
 }
 
