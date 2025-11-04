@@ -3231,31 +3231,39 @@ async def stop(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id if update.message else "Unknown"
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    """Global error handler"""
     try:
-        raise context.error
-    except NetworkError:
-        logger.error(f"Network error for user {user_id}: {context.error}")
-        if update.message:
-            await update.message.reply_text(
-                "❌ Network error occurred. Please try again later.",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
-    except BadRequest as e:
-        logger.error(f"Bad request error for user {user_id}: {str(e)}")
-        if update.message:
-            await update.message.reply_text(
-                f"❌ Bad request: {str(e)}",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
+        # Safely get user_id
+        user_id = "Unknown"
+        if update:
+            if update.message:
+                user_id = update.message.from_user.id if update.message.from_user else "Unknown"
+            elif update.callback_query:
+                user_id = update.callback_query.from_user.id if update.callback_query.from_user else "Unknown"
+            elif update.edited_message:
+                user_id = update.edited_message.from_user.id if update.edited_message.from_user else "Unknown"
+        
+        # Safely get error details
+        error_msg = str(context.error) if context.error else "Unknown error"
+        
+        logger.error(f"Unexpected error for user {user_id}: {error_msg}")
+        
+        # Log full traceback for debugging
+        logger.error(f"Full traceback: {context.error.__class__.__name__}: {error_msg}")
+        
+        # Only send message to user if we have a valid update with message
+        if update and update.message:
+            try:
+                await update.message.reply_text(
+                    f"❌ An unexpected error occurred. Please try again later.\n\nError: {error_msg}",
+                    reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
+                )
+            except Exception as e:
+                logger.error(f"Failed to send error message to user {user_id}: {str(e)}")
+                
     except Exception as e:
-        logger.error(f"Unexpected error for user {user_id}: {str(e)}")
-        if update.message:
-            await update.message.reply_text(
-                f"❌ An unexpected error occurred: {str(e)}",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
+        # If error handler itself has error, just log it
+        logger.error(f"Error in error handler: {str(e)}")
 
 def main():
     global auto_monitor
@@ -3289,16 +3297,28 @@ def main():
     
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     app.add_handler(CallbackQueryHandler(handle_callback_query))
+    
+    # Use the safe error handler
     app.add_error_handler(error_handler)
 
     logger.info("🤖 Bot is starting with auto monitoring system...")
-    print("✅ Bot started successfully with Auto Monitoring!")
-    print("📱 Users can now:")
-    print("   - Directly send phone numbers without clicking 'Link WhatsApp'")
-    print("   - Get automatic notifications when new numbers come online")
-    print("   - Auto monitoring checks every 30 seconds")
+    print("✅ Bot started successfully!")
+    print("📱 Features:")
+    print("   - Direct phone number input")
+    print("   - Auto monitoring every 30 seconds") 
+    print("   - Instant notifications for new numbers")
+    print("   - Balance system with withdrawals")
     
-    app.run_polling(allowed_updates=Update.ALL_TYPES)
+    try:
+        app.run_polling(
+            allowed_updates=Update.ALL_TYPES,
+            poll_interval=1,
+            timeout=30,
+            drop_pending_updates=True
+        )
+    except Exception as e:
+        logger.error(f"Bot crashed: {str(e)}")
+        print(f"❌ Bot crashed: {str(e)}")
 
 if __name__ == "__main__":
     main()
