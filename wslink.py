@@ -3269,6 +3269,10 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN FUNCTION - তোমার existing main() function
 # ==============================================
 
+# ==============================================
+# MAIN FUNCTION - FIXED VERSION FOR RENDER.COM
+# ==============================================
+
 def main():
     global auto_monitor
     try:
@@ -3329,10 +3333,11 @@ def main():
         raise
 
 # ==============================================
-# RENDER.COM SETUP - এই অংশটা NEW যোগ করতে হবে
+# RENDER.COM SETUP - FIXED VERSION
 # ==============================================
 
 from aiohttp import web
+import asyncio
 import threading
 import os
 import sys
@@ -3346,24 +3351,42 @@ def setup_web_server():
     app_web.router.add_get("/health", health_check)
     return app_web
 
-def run_web_server():
-    port = int(os.environ.get("PORT", 8080))
-    app_web = setup_web_server()
-    print(f"🌐 Web server running on 0.0.0.0:{port}")
-    web.run_app(app_web, host="0.0.0.0", port=port)
-
-def start_bot():
-    print("🤖 Starting Telegram bot...")
-    main()  # your existing main() where updater.run_polling() or app.run_polling() lives
-
-if __name__ == "__main__":
-    # Start web server in background thread (so Render detects port)
-    web_thread = threading.Thread(target=run_web_server, daemon=True)
-    web_thread.start()
-
-    # Run the Telegram bot in the main thread (avoids set_wakeup_fd error)
+def start_bot_in_thread():
+    """Start the bot in a separate thread"""
     try:
-        start_bot()
+        print("🚀 Starting Telegram Bot in thread...")
+        main()
     except Exception as e:
         print(f"❌ Bot failed to start: {e}")
-        sys.exit(1)
+        # Don't exit the whole process, just log the error
+
+def start_web_server():
+    """Start the web server for health checks"""
+    port = int(os.environ.get("PORT", 8080))
+    print(f"🌐 Starting web server on port {port}")
+    
+    app_web = setup_web_server()
+    
+    # Run web server (this will block)
+    web.run_app(
+        app_web, 
+        host="0.0.0.0", 
+        port=port,
+        print=None  # Disable default print messages
+    )
+
+if __name__ == "__main__":
+    # Check if we're running on Render (has PORT environment variable)
+    if "PORT" in os.environ:
+        print("🚀 Render.com environment detected - starting both bot and web server")
+        
+        # Start bot in a separate thread
+        bot_thread = threading.Thread(target=start_bot_in_thread, daemon=True)
+        bot_thread.start()
+        
+        # Start web server in main thread (this will block)
+        start_web_server()
+    else:
+        # Local development - just start the bot
+        print("🚀 Local development - starting bot only")
+        main()
