@@ -1300,6 +1300,7 @@ def encrypt_username(plain_text: str) -> str:
     encrypted_bytes = cipher.encrypt(padded_text)
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
+
 async def login_with_credentials(username, password, website_config, device_name):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -1339,17 +1340,17 @@ async def login_with_credentials(username, password, website_config, device_name
                                 }
                             return {
                                 "success": False,
-                                "error": "Login successful but no token received",
+                                "error": "✅ Login successful but no token received",
                                 "response": response_data
                             }
                         return {
                             "success": False,
-                            "error": response_data.get("msg", "Unknown error"),
+                            "error": "🔑 Invalid credentials",
                             "response": response_data
                         }
             except asyncio.TimeoutError:
                 if attempt == MAX_RETRIES - 1:
-                    error_msg = f"Request timed out after {REQUEST_TIMEOUT} seconds"
+                    error_msg = "⏰ Connection timeout"
                     logger.error(error_msg)
                     return {
                         "success": False,
@@ -1359,7 +1360,7 @@ async def login_with_credentials(username, password, website_config, device_name
                 await asyncio.sleep(1)
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
-                    error_msg = f"Connection error: {str(e)}"
+                    error_msg = "🌐 Connection failed"
                     logger.error(error_msg)
                     return {
                         "success": False,
@@ -1367,7 +1368,7 @@ async def login_with_credentials(username, password, website_config, device_name
                         "response": None
                     }
                 await asyncio.sleep(1)
-
+                
 async def register_account(website_config, phone_number, password, confirm_password, invite_code, device_name, reg_host):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -1404,7 +1405,7 @@ async def register_account(website_config, phone_number, password, confirm_passw
                             if attempt == MAX_RETRIES - 1:
                                 return {
                                     "code": -1,
-                                    "msg": f"Registration failed with HTTP status {response.status}",
+                                    "msg": "🌐 Registration failed",
                                     "data": None
                                 }
                             await asyncio.sleep(1)
@@ -1417,7 +1418,7 @@ async def register_account(website_config, phone_number, password, confirm_passw
                 if attempt == MAX_RETRIES - 1:
                     return {
                         "code": -1,
-                        "msg": f"Registration request timed out after {REQUEST_TIMEOUT} seconds",
+                        "msg": "⏰ Registration timeout",
                         "data": None
                     }
                 await asyncio.sleep(1)
@@ -1426,14 +1427,14 @@ async def register_account(website_config, phone_number, password, confirm_passw
                 if attempt == MAX_RETRIES - 1:
                     return {
                         "code": -1,
-                        "msg": f"Registration failed: {str(e)}",
+                        "msg": "🚫 Registration failed",
                         "data": None
                     }
                 await asyncio.sleep(1)
         logger.error(f"Registration failed after {MAX_RETRIES} attempts for {website_config['name']}")
         return {
             "code": -1,
-            "msg": f"Registration failed after {MAX_RETRIES} attempts",
+            "msg": "🚫 Registration failed",
             "data": None
         }
 
@@ -1494,12 +1495,12 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
                         if response_data.get("code") == -31 or "Please select area code" in response_data.get("msg", ""):
                             return {
                                 "code": -31,
-                                "msg": "❌ এই এরিয়া কোড বর্তমানে সাপোর্টেড নয়। দয়া করে এডমিনের সাথে যোগাযোগ করুন।",
+                                "msg": "🌍 Area code not supported",
                                 "time": str(int(time.time())),
                                 "data": None
                             }
 
-                        # আগের “too frequent” চেক আগের মতো থাকবে
+                        # আগের "too frequent" চেক আগের মতো থাকবে
                         if response_data.get("code") == 0 and response_data.get("msg") == "Frequent requests, please wait!!":
                             logger.info(f"Frequent requests error detected, waiting 2 seconds to retry (attempt {attempt + 1}/{MAX_RETRIES})")
                             await asyncio.sleep(2)
@@ -1512,7 +1513,7 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
                     logger.error(f"Send code timed out after {REQUEST_TIMEOUT} seconds")
                     return {
                         "code": -1,
-                        "msg": f"Request timed out after {REQUEST_TIMEOUT} seconds",
+                        "msg": "⏰ Request timeout",
                         "time": str(int(time.time())),
                         "data": None
                     }
@@ -1523,7 +1524,7 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
                     logger.error(f"Error in send_code after {MAX_RETRIES} attempts: {str(e)}")
                     return {
                         "code": -1,
-                        "msg": f"Request failed after {MAX_RETRIES} attempts: {str(e)}",
+                        "msg": "🚫 Failed to send verification code",
                         "time": str(int(time.time())),
                         "data": None
                     }
@@ -1532,7 +1533,7 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
         logger.error(f"Send code failed after {MAX_RETRIES} attempts")
         return {
             "code": -1,
-            "msg": f"Request failed after {MAX_RETRIES} attempts",
+            "msg": "🚫 Verification code sending failed",
             "time": str(int(time.time())),
             "data": None
         }
@@ -1888,11 +1889,12 @@ async def pending_withdrawals_command(update: Update, context: ContextTypes.DEFA
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
+
 async def get_phone_list(token, account_type, website_config, device_name, user_id=None, context=None):
     async with await device_manager.build_session(device_name) as session:
         if not token or len(token) < 10:
             logger.error(f"Invalid or missing token for {account_type} account")
-            return f"❌ Invalid or missing token for {account_type} account. Please login first using 'Log in Account'."
+            return f"🔑 Invalid or expired token"
         headers = {
             'Accept': 'application/json, text/plain, */*',
             'Accept-Encoding': get_random_accept_encoding(),
@@ -1955,19 +1957,22 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         except aiohttp.ClientResponseError as e:
             if e.status == 401:
                 logger.error(f"401 Unauthorized for {account_type} account ({website_config['name']}): {str(e)}")
-                return f"❌ Unauthorized access for {account_type} account ({website_config['name']}). Token may be invalid or expired. Please login again using 'Log in Account'."
+                return f"🚫 Unauthorized access"
             logger.error(f"HTTP error for {account_type} account ({website_config['name']}): {str(e)}")
-            return f"❌ Error while calling API for {account_type} account ({website_config['name']}): {str(e)}"
+            return f"🌐 API connection error"
         except asyncio.TimeoutError:
             logger.error(f"Phone list request timed out after {REQUEST_TIMEOUT} seconds")
-            return f"❌ Request timed out for {account_type} account ({website_config['name']})."
+            return f"⏰ Request timeout"
         except Exception as e:
+            if "Can not decode content-encoding: brotli (br)" in str(e):
+                logger.error(f"Encoding error for {account_type} account ({website_config['name']}): {str(e)}")
+                return f"🔧 API encoding error"
             logger.error(f"Request error for {account_type} account ({website_config['name']}): {str(e)}")
-            return f"❌ Error while calling API for {account_type} account ({website_config['name']}): {str(e)}"
+            return f"🌐 Connection failed"
 
         if data.get("code") != 1:
             logger.error(f"API response error for {account_type} ({website_config['name']}): {data.get('msg', 'Unknown error')}")
-            return f"❌ Invalid token or no data found for {account_type} account ({website_config['name']}): {data.get('msg', 'Unknown error')}"
+            return f"🚫 Invalid token or no data"
 
         phones = data.get("data", []) or []
         now = datetime.now(timezone.utc)
