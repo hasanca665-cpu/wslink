@@ -382,11 +382,7 @@ BALANCE_CONFIG_FILE = "balance_config.json"
 USER_BALANCES_FILE = "user_balances.json"
 WITHDRAWAL_REQUESTS_FILE = "withdrawal_requests.json"
 DAILY_STATS_FILE = "daily_stats.json"
-MONTHLY_STATS_FILE = "monthly_stats.json"  # ✅ এটি যোগ করুন
 REGISTRATION_FILE = "registration_data.txt"
-
-# ✅ BalanceManager instance তৈরি করুন
-balance_manager = BalanceManager()
 ANDROID_UAS = [
     "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
@@ -585,7 +581,7 @@ class AutoNumberMonitor:
                                             f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
                                             f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
                                             f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                                            f"🌐 Task নাম্বার: {website}\n\n"
+                                            f"🌐 ওয়েবসাইট: {website}\n\n"
                                             f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
                                             f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
                                         )
@@ -694,6 +690,7 @@ class NumberTracking:
         return max(0, int(remaining))
 
 number_tracker = NumberTracking()
+
 
 
 class BalanceManager:
@@ -1029,26 +1026,9 @@ class BalanceManager:
             
             return True
     
-    def update_income_percentage(self, new_percentage: int, admin_id: int):
-        """ইনকাম পার্সেন্টেজ আপডেট করুন - WITHOUT NOTIFICATION"""
-        with self.lock:
-            if new_percentage < 1 or new_percentage > 100:
-                return False
-            
-            old_percentage = self.balance_config.get("income_percentage", 100)
-            self.balance_config["income_percentage"] = new_percentage
-            self.balance_config["last_percentage_update"] = datetime.now().isoformat()
-            self.balance_config["percentage_updated_by"] = str(admin_id)
-            
-            self.save_all_data()
-            
-            logger.info(f"Income percentage updated by {admin_id}: {old_percentage}% -> {new_percentage}%")
-            return True
-    
     async def notify_all_users(self, context, message):
         """সকল ইউজারকে নোটিফাই করুন"""
         try:
-            notified_count = 0
             for user_id_str in self.user_balances.keys():
                 try:
                     await context.bot.send_message(
@@ -1056,13 +1036,10 @@ class BalanceManager:
                         message,
                         parse_mode='Markdown'
                     )
-                    notified_count += 1
-                    logger.info(f"Balance rate notification sent to user {user_id_str}")
+                    logger.info(f"Notification sent to user {user_id_str}")
                     await asyncio.sleep(0.1)  # Rate limiting
                 except Exception as e:
                     logger.error(f"Failed to notify user {user_id_str}: {str(e)}")
-            
-            logger.info(f"✅ Balance rate notifications sent to {notified_count} users")
         except Exception as e:
             logger.error(f"Error in notify_all_users: {str(e)}")
     
@@ -1096,8 +1073,7 @@ class BalanceManager:
             "total_lifetime": round(total_lifetime, 2),
             "total_withdrawn": round(total_withdrawn, 2),
             "total_online_count": total_online_count,
-            "balance_rate": self.balance_config["balance_per_online"],
-            "income_percentage": self.balance_config.get("income_percentage", 100)
+            "balance_rate": self.balance_config["balance_per_online"]
         }
     
     def get_today_stats(self):
@@ -1120,7 +1096,13 @@ class BalanceManager:
             "total_earnings": round(total_earnings, 2),
             "estimated_balance": total_online * self.balance_config["balance_per_online"]
         }
+
+# নতুন কনস্ট্যান্টস যোগ করুন
+MONTHLY_STATS_FILE = "monthly_stats.json"
+
+# ব্যালেন্স ম্যানেজার ইনিশিয়ালাইজ করুন
 balance_manager = BalanceManager()
+
 
 # Custom logging filter to mask sensitive data
 class SensitiveDataFilter(logging.Filter):
@@ -2079,18 +2061,26 @@ async def set_income_percentage_command(update: Update, context: ContextTypes.DE
         await update.message.reply_text("❌ অবৈধ পার্সেন্টেজ। দয়া করে সঠিক সংখ্যা লিখুন।")
         return
     
-    # ✅ NO NOTIFICATION for income percentage change
-    if balance_manager.update_income_percentage(new_percentage, user_id):
-        await update.message.reply_text(
-            f"✅ ইনকাম পার্সেন্টেজ আপডেট করা হয়েছে: {new_percentage}%\n\n"
-            f"ℹ️ ইউজারদেরকে নোটিফাই করা হবে না।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-    else:
-        await update.message.reply_text(
-            "❌ পার্সেন্টেজ আপডেট করতে সমস্যা হয়েছে।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
+    with balance_manager.lock:
+        old_percentage = balance_manager.balance_config.get("income_percentage", 100)
+        balance_manager.balance_config["income_percentage"] = new_percentage
+        balance_manager.save_all_data()
+    
+    # ✅ Send notification to all users
+    notification_msg = (
+        f"📢 **ইনকাম পার্সেন্টেজ আপডেট!**\n\n"
+        f"💰 নতুন পার্সেন্টেজ: {new_percentage}%\n"
+        f"📊 পূর্বের পার্সেন্টেজ: {old_percentage}%\n"
+        f"⏰ আপডেট সময়: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    
+    asyncio.create_task(balance_manager.notify_all_users(context, notification_msg))
+    
+    await update.message.reply_text(
+        f"✅ ইনকাম পার্সেন্টেজ আপডেট করা হয়েছে: {new_percentage}%\n"
+        f"👥 সকল ইউজারকে নোটিফাই করা হচ্ছে...",
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
 
 
 async def approve_withdrawal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2825,7 +2815,7 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
             f"⏰ **এই নাম্বারটি আবার submit করতে হবে:**\n\n"
             f"📱 নাম্বার: `{normalized_phone}`\n"
             f"⏳ বাকি সময়: {hours} ঘন্টা {minutes} মিনিট\n\n"
-            f"ℹ️ এই নাম্বারটি ইতিমধ্যে successful ভাবে online হয়েছে।\n"
+            f"ℹ️ এই নাম্বারটি ইতিমধ্যে successfulভাবে online হয়েছে।\n"
             f"একই নাম্বার 24 ঘন্টার পর আবার submit করা যাবে না।",
             parse_mode='Markdown',
             reply_markup=get_main_keyboard(selected_website, user_id)
