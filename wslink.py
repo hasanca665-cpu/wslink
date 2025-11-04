@@ -581,7 +581,7 @@ class AutoNumberMonitor:
                                             f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
                                             f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
                                             f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                                            f"🌐 ওয়েবসাইট: {website}\n\n"
+                                            f"🌐 Task নাম্বার: {website}\n\n"
                                             f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
                                             f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
                                         )
@@ -692,7 +692,6 @@ class NumberTracking:
 number_tracker = NumberTracking()
 
 
-
 class BalanceManager:
     def __init__(self):
         self.lock = threading.Lock()
@@ -716,9 +715,8 @@ class BalanceManager:
                     "admin_id": 5624278091,
                     "min_withdrawal": 50.0,
                     "auto_reset_daily": False,
-                    "income_percentage": 50  # নতুন ফিচার: ইনকাম পার্সেন্টেজ
+                    "income_percentage": 100  # নতুন ফিচার: ইনকাম পার্সেন্টেজ
                 }
-            # ... বাকি কোড একই থাকবে
             
             # User balances লোড
             if os.path.exists(USER_BALANCES_FILE):
@@ -758,7 +756,8 @@ class BalanceManager:
                 "balance_per_online": 0.50, 
                 "admin_id": 5624278091,
                 "min_withdrawal": 50.0,
-                "auto_reset_daily": False
+                "auto_reset_daily": False,
+                "income_percentage": 100
             }
             self.user_balances = {}
             self.withdrawal_requests = {}
@@ -997,8 +996,8 @@ class BalanceManager:
             
             return False, "Invalid action"
     
-    def update_balance_rate(self, new_rate: float, admin_id: int):
-        """ব্যালেন্স রেট আপডেট করুন"""
+    def update_balance_rate(self, new_rate: float, admin_id: int, context=None):
+        """ব্যালেন্স রেট আপডেট করুন - WITH NOTIFICATION"""
         with self.lock:
             if new_rate < 0:
                 return False
@@ -1011,7 +1010,57 @@ class BalanceManager:
             self.save_all_data()
             
             logger.info(f"Balance rate updated by {admin_id}: {old_rate} -> {new_rate} BDT")
+            
+            # ✅ Send notification to all users if context is provided
+            if context:
+                notification_msg = (
+                    f"📢 **ব্যালেন্স রেট আপডেট!**\n\n"
+                    f"💰 নতুন ব্যালেন্স রেট: {new_rate} BDT\n"
+                    f"📊 প্রতি অনলাইন নাম্বারে এখন {new_rate} BDT যোগ হবে\n"
+                    f"⏰ আপডেট সময়: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+                )
+                
+                # Run notification in background
+                asyncio.create_task(self.notify_all_users(context, notification_msg))
+            
             return True
+    
+    def update_income_percentage(self, new_percentage: int, admin_id: int):
+        """ইনকাম পার্সেন্টেজ আপডেট করুন - WITHOUT NOTIFICATION"""
+        with self.lock:
+            if new_percentage < 1 or new_percentage > 100:
+                return False
+            
+            old_percentage = self.balance_config.get("income_percentage", 100)
+            self.balance_config["income_percentage"] = new_percentage
+            self.balance_config["last_percentage_update"] = datetime.now().isoformat()
+            self.balance_config["percentage_updated_by"] = str(admin_id)
+            
+            self.save_all_data()
+            
+            logger.info(f"Income percentage updated by {admin_id}: {old_percentage}% -> {new_percentage}%")
+            return True
+    
+    async def notify_all_users(self, context, message):
+        """সকল ইউজারকে নোটিফাই করুন"""
+        try:
+            notified_count = 0
+            for user_id_str in self.user_balances.keys():
+                try:
+                    await context.bot.send_message(
+                        int(user_id_str),
+                        message,
+                        parse_mode='Markdown'
+                    )
+                    notified_count += 1
+                    logger.info(f"Balance rate notification sent to user {user_id_str}")
+                    await asyncio.sleep(0.1)  # Rate limiting
+                except Exception as e:
+                    logger.error(f"Failed to notify user {user_id_str}: {str(e)}")
+            
+            logger.info(f"✅ Balance rate notifications sent to {notified_count} users")
+        except Exception as e:
+            logger.error(f"Error in notify_all_users: {str(e)}")
     
     def get_pending_withdrawals(self):
         """পেন্ডিং উত্তোলন রিকোয়েস্টগুলো রিটার্ন করুন"""
@@ -1043,7 +1092,8 @@ class BalanceManager:
             "total_lifetime": round(total_lifetime, 2),
             "total_withdrawn": round(total_withdrawn, 2),
             "total_online_count": total_online_count,
-            "balance_rate": self.balance_config["balance_per_online"]
+            "balance_rate": self.balance_config["balance_per_online"],
+            "income_percentage": self.balance_config.get("income_percentage", 100)
         }
     
     def get_today_stats(self):
@@ -1066,12 +1116,6 @@ class BalanceManager:
             "total_earnings": round(total_earnings, 2),
             "estimated_balance": total_online * self.balance_config["balance_per_online"]
         }
-
-# নতুন কনস্ট্যান্টস যোগ করুন
-MONTHLY_STATS_FILE = "monthly_stats.json"
-
-# ব্যালেন্স ম্যানেজার ইনিশিয়ালাইজ করুন
-balance_manager = BalanceManager()
 
 
 # Custom logging filter to mask sensitive data
@@ -1643,24 +1687,12 @@ async def set_balance_rate_command(update: Update, context: ContextTypes.DEFAULT
         )
         return
     
-    if balance_manager.update_balance_rate(new_rate, user_id):
-        # সব ইউজারকে নোটিফাই করুন
-        for user_id_str in balance_manager.user_balances.keys():
-            try:
-                await context.bot.send_message(
-                    int(user_id_str),
-                    f"📢 **ব্যালেন্স রেট আপডেট!**\n\n"
-                    f"💰 নতুন ব্যালেন্স রেট: {new_rate} BDT\n"
-                    f"📊 প্রতি অনলাইন নাম্বারে এখন {new_rate} BDT যোগ হবে\n"
-                    f"⏰ আপডেট সময়: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
-                )
-            except Exception as e:
-                logger.error(f"Error notifying user {user_id_str}: {str(e)}")
-        
+    # ✅ Pass context for notifications
+    if balance_manager.update_balance_rate(new_rate, user_id, context):
         await update.message.reply_text(
             f"✅ ব্যালেন্স রেট আপডেট করা হয়েছে!\n\n"
             f"💰 নতুন রেট: {new_rate} BDT প্রতি অনলাইন নাম্বার\n"
-            f"👥 সকল ইউজারকে নোটিফাই করা হয়েছে",
+            f"👥 সকল ইউজারকে নোটিফাই করা হচ্ছে...",
             reply_markup=get_main_keyboard(selected_website, user_id)
         )
     else:
@@ -1931,30 +1963,34 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         phones = data.get("data", []) or []
         now = datetime.now(timezone.utc)
 
-        # ✅ CRITICAL: শুধুমাত্র display করার জন্য, balance add করবেন না
+        # ✅ শুধুমাত্র display করার জন্য, balance add করবেন না
         total = len(phones)
         online = sum(1 for p in phones if p.get("status") == 1)
         offline = total - online
 
-        # Get today's income score
+        # ✅ Get today's income score - FIXED
         today_income_info = ""
-        if user_id:
-            try:
-                today_score = await get_today_income_score(token, website_config, device_name)
-                if today_score:
-                    today_income_info = f"💰 Today Income Score: {today_score}\n"
-            except Exception as e:
-                logger.error(f"Error fetching today income score: {str(e)}")
+        try:
+            today_score = await get_today_income_score(token, website_config, device_name)
+            if today_score and today_score != "N/A":
+                today_income_info = f"💰 Today Income Score: {today_score}\n"
+                logger.info(f"Today income score for user {user_id}: {today_score}")
+        except Exception as e:
+            logger.error(f"Error fetching today income score in phone list: {str(e)}")
 
         output = [
             f"🕒 Last Updated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}",
-            today_income_info,
             f"🔗 Total Linked: {total}",
             f"🟢 Online: {online}",
             f"🔴 Offline: {offline}",
-            f"💰 Balance per online: {balance_manager.balance_config['balance_per_online']} BDT",
-            f"\n📱 Phone Numbers Status ({website_config['name']}):"
+            f"💰 Balance per online: {balance_manager.balance_config['balance_per_online']} BDT"
         ]
+
+        # ✅ Add today income score if available
+        if today_income_info:
+            output.insert(1, today_income_info)  # Insert after time
+
+        output.append(f"\n📱 Phone Numbers Status ({website_config['name']}):")
 
         for idx, phone_data in enumerate(phones, 1):
             phone = "+1" + str(phone_data.get("phone", ""))[-10:]
@@ -1965,25 +2001,22 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         return "\n".join(output)
         
 async def get_today_income_score(token, website_config, device_name):
-    """Get today's income score from the API"""
+    """Get today's income score from the API - FIXED VERSION"""
     try:
         async with await device_manager.build_session(device_name) as session:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Linux; Android 16; SM-M356B Build/BP2A.250605.031.A3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.122 Mobile Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'Accept-Encoding': get_random_accept_encoding(),
                 'token': token,
                 'Origin': website_config['origin'],
                 'Referer': website_config['referer'],
                 'X-Requested-With': 'mark.via.gp',
-                "accept-language": "en",
-                "sec-ch-ua": '"Android WebView";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
-                "sec-ch-ua-mobile": "?1",
-                "sec-ch-ua-platform": '"Android"',
-                "sec-fetch-site": "cross-site",
-                "sec-fetch-mode": "cors", 
-                "sec-fetch-dest": "empty",
-                "priority": "u=1, i"
+                "accept-language": ACCEPT_LANGUAGE,
+                "sec-ch-ua": random.choice(SEC_CH_UA_LIST),
+                "sec-ch-ua-mobile": SEC_CH_UA_MOBILE,
+                "sec-ch-ua-platform": SEC_CH_UA_PLATFORM,
+                **get_random_sec_fetch_headers(),
+                "priority": get_random_priority()
             }
             
             # API endpoint for today's income score
@@ -1993,6 +2026,8 @@ async def get_today_income_score(token, website_config, device_name):
                 async with session.get(api_url, headers=headers) as response:
                     if response.status == 200:
                         data = await response.json()
+                        logger.info(f"Today income score API response: {data}")
+                        
                         if data.get("code") == 1:
                             score_data = data.get("data", {})
                             today_score = score_data.get("today_income", 0)
@@ -2001,7 +2036,11 @@ async def get_today_income_score(token, website_config, device_name):
                             admin_percentage = balance_manager.balance_config.get("income_percentage", 100)
                             final_score = today_score * (admin_percentage / 100)
                             
-                            return f"${final_score:.2f} ({admin_percentage}%)"
+                            return f"${final_score:.2f}"
+                        else:
+                            logger.error(f"Today income score API error: {data.get('msg')}")
+                    else:
+                        logger.error(f"Today income score HTTP error: {response.status}")
                     return "N/A"
     except Exception as e:
         logger.error(f"Error fetching today income score: {str(e)}")
@@ -2010,6 +2049,7 @@ async def get_today_income_score(token, website_config, device_name):
 
 async def set_income_percentage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
     
     if user_id != balance_manager.balance_config["admin_id"]:
         await update.message.reply_text("❌ শুধুমাত্র এডমিন এই কমান্ড ব্যবহার করতে পারবেন।")
@@ -2017,7 +2057,13 @@ async def set_income_percentage_command(update: Update, context: ContextTypes.DE
     
     if not context.args:
         current_percentage = balance_manager.balance_config.get("income_percentage", 100)
-        await update.message.reply_text(f"বর্তমান ইনকাম পার্সেন্টেজ: {current_percentage}%")
+        await update.message.reply_text(
+            f"💰 বর্তমান ইনকাম পার্সেন্টেজ: {current_percentage}%\n\n"
+            f"ব্যবহার: /setincome <percentage>\n"
+            f"উদাহরণ: /setincome 50 (৫০% দেখাবে)\n"
+            f"উদাহরণ: /setincome 100 (১০০% দেখাবে)",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
         return
     
     try:
@@ -2026,14 +2072,21 @@ async def set_income_percentage_command(update: Update, context: ContextTypes.DE
             await update.message.reply_text("❌ পার্সেন্টেজ ১ থেকে ১০০ এর মধ্যে হতে হবে।")
             return
     except ValueError:
-        await update.message.reply_text("❌ অবৈধ পার্সেন্টেজ।")
+        await update.message.reply_text("❌ অবৈধ পার্সেন্টেজ। দয়া করে সঠিক সংখ্যা লিখুন।")
         return
     
-    with balance_manager.lock:
-        balance_manager.balance_config["income_percentage"] = new_percentage
-        balance_manager.save_all_data()
-    
-    await update.message.reply_text(f"✅ ইনকাম পার্সেন্টেজ আপডেট করা হয়েছে: {new_percentage}%")
+    # ✅ NO NOTIFICATION for income percentage change
+    if balance_manager.update_income_percentage(new_percentage, user_id):
+        await update.message.reply_text(
+            f"✅ ইনকাম পার্সেন্টেজ আপডেট করা হয়েছে: {new_percentage}%\n\n"
+            f"ℹ️ ইউজারদেরকে নোটিফাই করা হবে না।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+    else:
+        await update.message.reply_text(
+            "❌ পার্সেন্টেজ আপডেট করতে সমস্যা হয়েছে।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
 
 
 async def approve_withdrawal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2768,7 +2821,7 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
             f"⏰ **এই নাম্বারটি আবার submit করতে হবে:**\n\n"
             f"📱 নাম্বার: `{normalized_phone}`\n"
             f"⏳ বাকি সময়: {hours} ঘন্টা {minutes} মিনিট\n\n"
-            f"ℹ️ এই নাম্বারটি ইতিমধ্যে successfulভাবে online হয়েছে।\n"
+            f"ℹ️ এই নাম্বারটি ইতিমধ্যে successful ভাবে online হয়েছে।\n"
             f"একই নাম্বার 24 ঘন্টার পর আবার submit করা যাবে না।",
             parse_mode='Markdown',
             reply_markup=get_main_keyboard(selected_website, user_id)
