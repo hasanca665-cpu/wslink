@@ -1,4 +1,4 @@
-import web
+from aiohttp import web
 import os
 import re
 import json
@@ -3385,6 +3385,3 @@ if __name__ == "__main__":
     else:
         print("💻 Running locally...")
         start_bot()
-
-if __name__ == "__main__":
-    main()
