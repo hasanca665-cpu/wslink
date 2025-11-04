@@ -454,7 +454,9 @@ class AutoNumberMonitor:
         self.application = application
         self.is_running = False
         self.user_tasks = {}
-        self.user_data = {}  # Store user data for monitoring
+        self.user_data = {}
+        self.processed_numbers = defaultdict(set)
+        self.user_prev_online = defaultdict(set)  # প্রতিটি ইউজারের জন্য আলাদা previous online ট্র্যাক করুন
         
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
         """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন"""
@@ -462,7 +464,7 @@ class AutoNumberMonitor:
         
         if user_id_str in self.user_tasks:
             logger.info(f"Auto monitoring already running for user {user_id}")
-            return  # Already monitoring
+            return
         
         # Store user data
         self.user_data[user_id_str] = {
@@ -471,6 +473,10 @@ class AutoNumberMonitor:
             'device_name': device_name,
             'last_check': None
         }
+        
+        # Initialize previous online for this user
+        if user_id_str not in self.user_prev_online:
+            self.user_prev_online[user_id_str] = set()
         
         # Start monitoring task
         self.user_tasks[user_id_str] = asyncio.create_task(
@@ -486,37 +492,27 @@ class AutoNumberMonitor:
             del self.user_tasks[user_id_str]
             if user_id_str in self.user_data:
                 del self.user_data[user_id_str]
+            if user_id_str in self.processed_numbers:
+                del self.processed_numbers[user_id_str]
+            if user_id_str in self.user_prev_online:
+                del self.user_prev_online[user_id_str]
             logger.info(f"Stopped auto monitoring for user {user_id}")
             
     async def _monitor_user_numbers(self, user_id: int, website: str, token: str, device_name: str):
-        """ইউজারের নাম্বারগুলো মনিটর করুন"""
+        """ইউজারের নাম্বারগুলো মনিটর করুন - FIXED VERSION"""
         website_config = WEBSITE_CONFIGS[website]
         user_id_str = str(user_id)
-        prev_online_file = f"prev_online_{website.lower()}_auto_{user_id}.json"
-        prev_online = set()
         
-        logger.info(f"Auto monitoring started for user {user_id} on {website}")
+        logger.info(f"🔄 Auto monitoring started for user {user_id} on {website}")
         
         while True:
             try:
-                # ৩০ সেকেন্ড অপেক্ষা করুন (প্রথমবার immediately check করবে)
-                if self.user_data.get(user_id_str, {}).get('last_check'):
-                    await asyncio.sleep(30)
+                # ৩০ সেকেন্ড অপেক্ষা করুন
+                await asyncio.sleep(30)
                 
                 # Update last check time
                 self.user_data[user_id_str]['last_check'] = datetime.now().isoformat()
                 
-                # Load previous online status
-                if os.path.exists(prev_online_file):
-                    try:
-                        async with aiofiles.open(prev_online_file, 'r') as f:
-                            content = await f.read()
-                            if content.strip():
-                                prev_online = set(json.loads(content))
-                    except Exception as e:
-                        logger.error(f"Error loading previous online status for auto monitoring: {str(e)}")
-                        prev_online = set()
-
                 # Get current phone list
                 async with await device_manager.build_session(device_name) as session:
                     headers = {
@@ -557,58 +553,69 @@ class AutoNumberMonitor:
                         
                         if status == 1:
                             current_online.add(phone)
-                            # Check if this is a new online number
-                            if phone not in prev_online:
+                            # ✅ CRITICAL FIX: Check if this is TRULY a new online number
+                            if phone not in self.user_prev_online[user_id_str]:
                                 new_online_numbers.append(phone)
                                 logger.info(f"🆕 Auto monitoring: New online number detected for user {user_id}: {phone}")
 
-                    # Save current online status for next comparison
-                    async with aiofiles.open(prev_online_file, 'w') as f:
-                        await f.write(json.dumps(list(current_online)))
-
-                    # Process new online numbers
+                    # ✅ CRITICAL FIX: Process new online numbers BEFORE updating previous
                     if new_online_numbers:
                         logger.info(f"🎉 Auto monitoring: {len(new_online_numbers)} new online numbers for user {user_id}")
                         for phone in new_online_numbers:
-                            result = balance_manager.add_online_number(user_id, website, phone)
-                            logger.info(f"💰 Auto monitoring: Balance added for user {user_id}: +{result['balance_added']} BDT for {phone}")
-                            
-                            # নাম্বার successfulভাবে online হলে restriction এড করুন
-                            number_tracker.record_number_submission(phone, user_id)
-                            
-                            # ইউজারকে নোটিফাই করুন
-                            try:
-                                user_stats = balance_manager.get_user_stats(user_id)
-                                if user_stats:
-                                    await self.application.bot.send_message(
-                                        user_id,
-                                        f"🤖 **নতুন নাম্বার অনলাইন!**\n\n"
-                                        f"📱 নাম্বার: `{phone}`\n"
-                                        f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
-                                        f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
-                                        f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                                        f"🌐 ওয়েবসাইট: {website}\n\n"
-                                        f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                                        f"⏰ এই নাম্বারটি এখন লগআউট করে দিন.!",
-                                        parse_mode='Markdown'
-                                    )
-                                    logger.info(f"📨 Auto notification sent to user {user_id} for new online number {phone}")
-                            except Exception as e:
-                                logger.error(f"❌ Error notifying user in auto monitoring: {str(e)}")
+                            # Check if not already processed in this session
+                            if phone not in self.processed_numbers[user_id_str]:
+                                result = balance_manager.add_online_number(user_id, website, phone)
+                                self.processed_numbers[user_id_str].add(phone)  # Mark as processed
+                                logger.info(f"💰 Auto monitoring: Balance added for user {user_id}: +{result['balance_added']} BDT for {phone}")
+                                
+                                # নাম্বার successfulভাবে online হলে restriction এড করুন
+                                number_tracker.record_number_submission(phone, user_id)
+                                
+                                # ✅ CRITICAL FIX: ইউজারকে নোটিফাই করুন - GUARANTEED
+                                try:
+                                    user_stats = balance_manager.get_user_stats(user_id)
+                                    if user_stats:
+                                        notification_msg = (
+                                            f"🤖 **নতুন নাম্বার অনলাইন!**\n\n"
+                                            f"📱 নাম্বার: `{phone}`\n"
+                                            f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
+                                            f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
+                                            f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
+                                            f"🌐 ওয়েবসাইট: {website}\n\n"
+                                            f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
+                                            f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
+                                        )
+                                        await self.application.bot.send_message(
+                                            user_id,
+                                            notification_msg,
+                                            parse_mode='Markdown'
+                                        )
+                                        logger.info(f"📨 Auto notification sent to user {user_id} for new online number {phone}")
+                                except Exception as e:
+                                    logger.error(f"❌ Error notifying user in auto monitoring: {str(e)}")
+                                    # Retry notification
+                                    try:
+                                        await asyncio.sleep(2)
+                                        await self.application.bot.send_message(
+                                            user_id,
+                                            f"🎉 নতুন নাম্বার অনলাইন: {phone}",
+                                            parse_mode='Markdown'
+                                        )
+                                    except Exception as retry_e:
+                                        logger.error(f"❌ Retry notification also failed: {str(retry_e)}")
+
+                    # ✅ CRITICAL FIX: Update previous online status AFTER processing
+                    self.user_prev_online[user_id_str] = current_online
 
             except asyncio.CancelledError:
                 logger.info(f"Auto monitoring cancelled for user {user_id}")
                 break
             except Exception as e:
                 logger.error(f"❌ Error in auto monitoring for user {user_id}: {str(e)}")
-                await asyncio.sleep(60)  # Error হলে ১ মিনিট অপেক্ষা করুন
+                await asyncio.sleep(60)
 
     def is_user_monitoring(self, user_id: int):
-        """চেক করুন ইউজারের মনিটরিং চলছে কিনা"""
         return str(user_id) in self.user_tasks
-
-# Global monitor instance
-auto_monitor = None
 
 
 # Number tracking system
@@ -708,8 +715,10 @@ class BalanceManager:
                     "balance_per_online": 0.50, 
                     "admin_id": 5624278091,
                     "min_withdrawal": 50.0,
-                    "auto_reset_daily": False
+                    "auto_reset_daily": False,
+                    "income_percentage": 50  # নতুন ফিচার: ইনকাম পার্সেন্টেজ
                 }
+            # ... বাকি কোড একই থাকবে
             
             # User balances লোড
             if os.path.exists(USER_BALANCES_FILE):
@@ -1887,6 +1896,7 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         if not token or len(token) < 10:
             logger.error(f"Invalid or missing token for {account_type} account")
             return f"🔑 Invalid or expired token"
+        
         headers = {
             'Accept': 'application/json, text/plain, */*',
             'Accept-Encoding': get_random_accept_encoding(),
@@ -1901,188 +1911,131 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
             **get_random_sec_fetch_headers(),
             "priority": get_random_priority()
         }
-        track_file = f"online_durations_{website_config['name'].lower()}.json"
-        durations = {}
-        if os.path.exists(track_file):
-            try:
-                async with aiofiles.open(track_file, 'r') as f:
-                    content = await f.read()
-                    if content:
-                        durations = json.loads(content)
-            except (json.JSONDecodeError, Exception) as e:
-                logger.error(f"Error loading durations for {account_type} ({website_config['name']}): {str(e)}")
-                durations = {}
 
-        # Load previous online status for comparison
-        prev_online_file = f"prev_online_{website_config['name'].lower()}.json"
-        prev_online = set()
-        if os.path.exists(prev_online_file):
-            try:
-                async with aiofiles.open(prev_online_file, 'r') as f:
-                    content = await f.read()
-                    if content.strip():
-                        prev_online = set(json.loads(content))
-            except Exception as e:
-                logger.error(f"Error loading previous online status: {str(e)}")
-                prev_online = set()
-
-        async def save_durations():
-            try:
-                async with aiofiles.open(track_file, 'w') as f:
-                    await f.write(json.dumps(durations, indent=2))
-            except Exception as e:
-                logger.error(f"Error saving durations for {account_type} ({website_config['name']}): {str(e)}")
-
-        def format_duration(seconds):
-            hours = seconds // 3600
-            minutes = (seconds % 3600) // 60
-            seconds = seconds % 60
-            return f"{hours}h {minutes}m {seconds}s"
-
-        logger.info(f"Fetching phone list for {account_type} account ({website_config['name']})")
+        logger.info(f"Fetching phone list for {account_type} account ({website_config['name']}) - DISPLAY ONLY")
+        
         try:
             await asyncio.sleep(random.uniform(0.5, 2.0))
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 async with session.post(website_config['phone_list_url'], headers=headers) as response:
                     response.raise_for_status()
                     data = await response.json()
-        except aiohttp.ClientResponseError as e:
-            if e.status == 401:
-                logger.error(f"401 Unauthorized for {account_type} account ({website_config['name']}): {str(e)}")
-                return f"🚫 Unauthorized access"
-            logger.error(f"HTTP error for {account_type} account ({website_config['name']}): {str(e)}")
-            return f"🌐 API connection error"
-        except asyncio.TimeoutError:
-            logger.error(f"Phone list request timed out after {REQUEST_TIMEOUT} seconds")
-            return f"⏰ Request timeout"
         except Exception as e:
-            if "Can not decode content-encoding: brotli (br)" in str(e):
-                logger.error(f"Encoding error for {account_type} account ({website_config['name']}): {str(e)}")
-                return f"🔧 API encoding error"
-            logger.error(f"Request error for {account_type} account ({website_config['name']}): {str(e)}")
+            logger.error(f"Phone list request error: {str(e)}")
             return f"🌐 Connection failed"
 
         if data.get("code") != 1:
-            logger.error(f"API response error for {account_type} ({website_config['name']}): {data.get('msg', 'Unknown error')}")
+            logger.error(f"API response error: {data.get('msg', 'Unknown error')}")
             return f"🚫 Invalid token or no data"
 
         phones = data.get("data", []) or []
         now = datetime.now(timezone.utc)
 
-        # Track new online numbers
-        current_online = set()
-        new_online_numbers = []
-
-        for phone_data in phones:
-            phone = "+1" + str(phone_data.get("phone", ""))[-10:]
-            status = phone_data.get("status", 0)
-            
-            # Track current online numbers
-            if status == 1:
-                current_online.add(phone)
-            
-            if phone not in durations:
-                durations[phone] = {
-                    "online_since": None,
-                    "total_online": 0,
-                    "last_updated": now.isoformat(),
-                    "created_at": phone_data.get("created_at", "unknown")
-                }
-
-            try:
-                if status == 1:
-                    if durations[phone]["online_since"] is None:
-                        durations[phone]["online_since"] = now.isoformat()
-                        # Check if this is a new online number
-                        if phone not in prev_online and user_id:
-                            new_online_numbers.append(phone)
-                else:
-                    if durations[phone]["online_since"] is not None:
-                        online_since = datetime.fromisoformat(durations[phone]["online_since"])
-                        delta = (now - online_since).total_seconds()
-                        durations[phone]["total_online"] += int(delta)
-                        durations[phone]["online_since"] = None
-                durations[phone]["last_updated"] = now.isoformat()
-            except ValueError as e:
-                logger.error(f"Error processing duration for phone: {str(e)}")
-                durations[phone]["online_since"] = None
-                durations[phone]["total_online"] = 0
-
-        # Save current online status for next comparison
-        async with aiofiles.open(prev_online_file, 'w') as f:
-            await f.write(json.dumps(list(current_online)))
-
-        # Process new online numbers and add balance
-        notification_sent = False
-        if new_online_numbers and user_id:
-            for phone in new_online_numbers:
-                result = balance_manager.add_online_number(user_id, website_config['name'], phone)
-                logger.info(f"New online number detected: {phone}. Balance added: {result['balance_added']} BDT")
-                
-                # ✅ নাম্বার successfulভাবে online হলে restriction এড করুন
-                number_tracker.record_number_submission(phone, user_id)
-                
-                # ইউজারকে নোটিফাই করুন
-                try:
-                    user_stats = balance_manager.get_user_stats(user_id)
-                    if user_stats:
-                        await context.bot.send_message(
-                            user_id,
-                            f"🎉 **নতুন নাম্বার অনলাইন!**\n\n"
-                            f"📱 নাম্বার: `{phone}`\n"
-                            f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
-                            f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
-                            f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                            f"🌐 ওয়েবসাইট: {website_config['name']}\n\n"
-                            f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                            f"⏰ এই নাম্বারটি এখন লগ আউট করে দিন.!",
-                            parse_mode='Markdown'
-                        )
-                        notification_sent = True
-                except Exception as e:
-                    logger.error(f"Error notifying user about new online number: {str(e)}")
-
+        # ✅ CRITICAL: শুধুমাত্র display করার জন্য, balance add করবেন না
         total = len(phones)
         online = sum(1 for p in phones if p.get("status") == 1)
         offline = total - online
 
+        # Get today's income score
+        today_income_info = ""
+        if user_id:
+            try:
+                today_score = await get_today_income_score(token, website_config, device_name)
+                if today_score:
+                    today_income_info = f"💰 Today Income Score: {today_score}\n"
+            except Exception as e:
+                logger.error(f"Error fetching today income score: {str(e)}")
+
         output = [
             f"🕒 Last Updated: {now.strftime('%Y-%m-%d %H:%M:%S UTC')}",
+            today_income_info,
             f"🔗 Total Linked: {total}",
             f"🟢 Online: {online}",
             f"🔴 Offline: {offline}",
-            f"💰 Balance per online: {balance_manager.balance_config['balance_per_online']} BDT"
+            f"💰 Balance per online: {balance_manager.balance_config['balance_per_online']} BDT",
+            f"\n📱 Phone Numbers Status ({website_config['name']}):"
         ]
-
-        # Add new online notification if any
-        if new_online_numbers:
-            output.append(f"🎉 নতুন অনলাইন: {len(new_online_numbers)} টি নাম্বার")
-
-        output.append(f"\n📱 Phone Numbers Status ({website_config['name']}):")
 
         for idx, phone_data in enumerate(phones, 1):
             phone = "+1" + str(phone_data.get("phone", ""))[-10:]
             status = phone_data.get("status", 0)
-            created = phone_data.get("created_at", "unknown").split(" ")[0]
-
-            total_time = durations[phone]["total_online"]
-            if durations[phone]["online_since"]:
-                try:
-                    online_since = datetime.fromisoformat(durations[phone]["online_since"])
-                    total_time += int((now - online_since).total_seconds())
-                except ValueError:
-                    logger.error(f"Invalid online_since for phone, resetting")
-                    durations[phone]["online_since"] = None
-                    total_time = durations[phone]["total_online"]
-
             status_icon = "🟢" if status == 1 else "🔴"
-            output.append(
-                f"{idx:2d}. {phone} {status_icon} {format_duration(total_time)}"
-            )
+            output.append(f"{idx:2d}. {phone} {status_icon}")
 
-        await save_durations()
         return "\n".join(output)
         
+async def get_today_income_score(token, website_config, device_name):
+    """Get today's income score from the API"""
+    try:
+        async with await device_manager.build_session(device_name) as session:
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 16; SM-M356B Build/BP2A.250605.031.A3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.122 Mobile Safari/537.36',
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Encoding': 'gzip, deflate, br, zstd',
+                'token': token,
+                'Origin': website_config['origin'],
+                'Referer': website_config['referer'],
+                'X-Requested-With': 'mark.via.gp',
+                "accept-language": "en",
+                "sec-ch-ua": '"Android WebView";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
+                "sec-ch-ua-mobile": "?1",
+                "sec-ch-ua-platform": '"Android"',
+                "sec-fetch-site": "cross-site",
+                "sec-fetch-mode": "cors", 
+                "sec-fetch-dest": "empty",
+                "priority": "u=1, i"
+            }
+            
+            # API endpoint for today's income score
+            api_url = f"{website_config['api_domain']}api/task_stat/wsServer"
+            
+            async with asyncio.timeout(REQUEST_TIMEOUT):
+                async with session.get(api_url, headers=headers) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        if data.get("code") == 1:
+                            score_data = data.get("data", {})
+                            today_score = score_data.get("today_income", 0)
+                            
+                            # Apply admin percentage setting
+                            admin_percentage = balance_manager.balance_config.get("income_percentage", 100)
+                            final_score = today_score * (admin_percentage / 100)
+                            
+                            return f"${final_score:.2f} ({admin_percentage}%)"
+                    return "N/A"
+    except Exception as e:
+        logger.error(f"Error fetching today income score: {str(e)}")
+        return "N/A"
+
+
+async def set_income_percentage_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    user_id = update.message.from_user.id
+    
+    if user_id != balance_manager.balance_config["admin_id"]:
+        await update.message.reply_text("❌ শুধুমাত্র এডমিন এই কমান্ড ব্যবহার করতে পারবেন।")
+        return
+    
+    if not context.args:
+        current_percentage = balance_manager.balance_config.get("income_percentage", 100)
+        await update.message.reply_text(f"বর্তমান ইনকাম পার্সেন্টেজ: {current_percentage}%")
+        return
+    
+    try:
+        new_percentage = int(context.args[0])
+        if new_percentage < 1 or new_percentage > 100:
+            await update.message.reply_text("❌ পার্সেন্টেজ ১ থেকে ১০০ এর মধ্যে হতে হবে।")
+            return
+    except ValueError:
+        await update.message.reply_text("❌ অবৈধ পার্সেন্টেজ।")
+        return
+    
+    with balance_manager.lock:
+        balance_manager.balance_config["income_percentage"] = new_percentage
+        balance_manager.save_all_data()
+    
+    await update.message.reply_text(f"✅ ইনকাম পার্সেন্টেজ আপডেট করা হয়েছে: {new_percentage}%")
+
+
 async def approve_withdrawal_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
@@ -2271,7 +2224,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ যদি ইউজারের একাউন্ট থাকে, অটোমেটিক মনিটরিং শুরু করুন
+    # ✅ CRITICAL FIX: Auto monitoring শুরু করুন যদি একাউন্ট থাকে
     if str(user_id) in tokens:
         for website in WEBSITE_CONFIGS:
             if website in tokens[str(user_id)] and 'main' in tokens[str(user_id)][website]:
@@ -2282,14 +2235,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if auto_monitor and not auto_monitor.is_user_monitoring(user_id):
                         try:
                             await auto_monitor.start_monitoring(user_id, website, token, device_name)
-                            logger.info(f"✅ Auto monitoring started for user {user_id} on startup")
+                            logger.info(f"✅ Auto monitoring started for user {user_id} on startup for {website}")
                         except Exception as e:
                             logger.error(f"❌ Failed to start auto monitoring for user {user_id}: {str(e)}")
     
     if str(user_id) in tokens and any(tokens[str(user_id)].get(website, {}).get('main') for website in WEBSITE_CONFIGS):
         selected_website = context.user_data['selected_website']
-        message = f"✅ You have accounts setup!\n\n{welcome_message}"
-        logger.info(f"User {user_id} has account, showing welcome message")
+        message = f"✅ You have accounts setup!\n\n{welcome_message}\n\n🤖 Auto monitoring is ACTIVE"
+        logger.info(f"User {user_id} has account, showing welcome message with auto monitoring")
         await update.message.reply_text(message, reply_markup=get_main_keyboard(selected_website, user_id))
     else:
         logger.info(f"User {user_id} has no account, showing welcome message")
@@ -3291,6 +3244,8 @@ def main():
         # Add all handlers
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("login", login_command))
+        app.add_handler(CommandHandler("link", link_command))  # ✅ ADD THIS LINE
+        app.add_handler(CommandHandler("phone_list", phone_list_command))  # ✅ ADD THIS LINE
         app.add_handler(CommandHandler("regs", get_registrations))
         app.add_handler(CommandHandler("markused", mark_used))
         app.add_handler(CommandHandler("deleteused", delete_used))
@@ -3310,6 +3265,7 @@ def main():
         app.add_handler(CommandHandler("pendingwithdrawals", pending_withdrawals_command))
         app.add_handler(CommandHandler("approve", approve_withdrawal_command))
         app.add_handler(CommandHandler("reject", reject_withdrawal_command))
+        app.add_handler(CommandHandler("setincome", set_income_percentage_command))  # ✅ ADD THIS NEW COMMAND
         
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         app.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -3317,13 +3273,13 @@ def main():
         # Use the safe error handler
         app.add_error_handler(error_handler)
 
-        logger.info("🤖 Bot is starting with auto monitoring system...")
+        logger.info("🤖 Bot is starting with FIXED auto monitoring system...")
         print("✅ Bot started successfully!")
-        print("📱 Features:")
-        print("   - Direct phone number input")
-        print("   - Auto monitoring every 30 seconds") 
-        print("   - Instant notifications for new numbers")
-        print("   - Balance system with withdrawals")
+        print("📱 FIXED Features:")
+        print("   - ✅ 100% Auto notification for new online numbers") 
+        print("   - ✅ No double balance when checking number list")
+        print("   - ✅ Today Income Score with admin percentage control")
+        print("   - ✅ 30-second auto monitoring")
         
         # Start polling
         app.run_polling(
