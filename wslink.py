@@ -1992,21 +1992,25 @@ async def get_today_income_score(token, website_config, device_name):
         async with await device_manager.build_session(device_name) as session:
             headers = {
                 'Accept': 'application/json, text/plain, */*',
-                'Accept-Encoding': get_random_accept_encoding(),
+                'Accept-Encoding': 'gzip, deflate, br',
                 'token': token,
                 'Origin': website_config['origin'],
                 'Referer': website_config['referer'],
                 'X-Requested-With': 'mark.via.gp',
-                "accept-language": ACCEPT_LANGUAGE,
-                "sec-ch-ua": random.choice(SEC_CH_UA_LIST),
-                "sec-ch-ua-mobile": SEC_CH_UA_MOBILE,
-                "sec-ch-ua-platform": SEC_CH_UA_PLATFORM,
-                **get_random_sec_fetch_headers(),
-                "priority": get_random_priority()
+                "accept-language": "en-US,en;q=0.9",
+                "sec-ch-ua": '"Not)A;Brand";v="99", "Chromium";v="113", "Google Chrome";v="113"',
+                "sec-ch-ua-mobile": "?1",
+                "sec-ch-ua-platform": '"Android"',
+                "sec-fetch-site": "cross-site",
+                "sec-fetch-mode": "cors",
+                "sec-fetch-dest": "empty",
+                "priority": "u=1, i"
             }
             
             # API endpoint for today's income score
             api_url = f"{website_config['api_domain']}api/task_stat/wsServer"
+            
+            logger.info(f"Fetching today income score from: {api_url}")
             
             async with asyncio.timeout(REQUEST_TIMEOUT):
                 async with session.get(api_url, headers=headers) as response:
@@ -2016,18 +2020,26 @@ async def get_today_income_score(token, website_config, device_name):
                         
                         if data.get("code") == 1:
                             score_data = data.get("data", {})
-                            today_score = score_data.get("today_income", 0)
+                            # ✅ CORRECT FIELD NAME: today_income_score
+                            today_score = score_data.get("today_income_score", 0)
                             
                             # Apply admin percentage setting
                             admin_percentage = balance_manager.balance_config.get("income_percentage", 100)
                             final_score = today_score * (admin_percentage / 100)
                             
+                            logger.info(f"Today income score found: {today_score} -> {final_score} ({admin_percentage}%)")
                             return f"${final_score:.2f}"
                         else:
-                            logger.error(f"Today income score API error: {data.get('msg')}")
+                            error_msg = data.get('msg', 'Unknown error')
+                            logger.error(f"Today income score API error: {error_msg}")
+                            return "N/A"
                     else:
                         logger.error(f"Today income score HTTP error: {response.status}")
-                    return "N/A"
+                        return "N/A"
+                        
+    except asyncio.TimeoutError:
+        logger.error("Today income score request timeout")
+        return "Timeout"
     except Exception as e:
         logger.error(f"Error fetching today income score: {str(e)}")
         return "N/A"
