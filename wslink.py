@@ -3333,7 +3333,6 @@ def main():
 # ==============================================
 
 from aiohttp import web
-import asyncio
 import threading
 import os
 import sys
@@ -3347,22 +3346,24 @@ def setup_web_server():
     app_web.router.add_get("/health", health_check)
     return app_web
 
-def start_bot_blocking():
+def run_web_server():
+    port = int(os.environ.get("PORT", 8080))
+    app_web = setup_web_server()
+    print(f"🌐 Web server running on 0.0.0.0:{port}")
+    web.run_app(app_web, host="0.0.0.0", port=port)
+
+def start_bot():
+    print("🤖 Starting Telegram bot...")
+    main()  # your existing main() where updater.run_polling() or app.run_polling() lives
+
+if __name__ == "__main__":
+    # Start web server in background thread (so Render detects port)
+    web_thread = threading.Thread(target=run_web_server, daemon=True)
+    web_thread.start()
+
+    # Run the Telegram bot in the main thread (avoids set_wakeup_fd error)
     try:
-        print("🚀 Starting Telegram Bot...")
-        main()  # Your main() starts bot.run_polling()
+        start_bot()
     except Exception as e:
         print(f"❌ Bot failed to start: {e}")
         sys.exit(1)
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    print(f"🌐 Render environment detected — using port {port}")
-
-    # 1️⃣ Start bot in a background thread (so it doesn't block)
-    bot_thread = threading.Thread(target=start_bot_blocking, daemon=True)
-    bot_thread.start()
-
-    # 2️⃣ Run web server on main thread so Render detects the port
-    app_web = setup_web_server()
-    web.run_app(app_web, host="0.0.0.0", port=port)
