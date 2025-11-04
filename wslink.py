@@ -382,7 +382,11 @@ BALANCE_CONFIG_FILE = "balance_config.json"
 USER_BALANCES_FILE = "user_balances.json"
 WITHDRAWAL_REQUESTS_FILE = "withdrawal_requests.json"
 DAILY_STATS_FILE = "daily_stats.json"
+MONTHLY_STATS_FILE = "monthly_stats.json"  # ✅ এটি যোগ করুন
 REGISTRATION_FILE = "registration_data.txt"
+
+# ✅ BalanceManager instance তৈরি করুন
+balance_manager = BalanceManager()
 ANDROID_UAS = [
     "Mozilla/5.0 (Linux; Android 14; SM-S928B) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Mobile Safari/537.36",
     "Mozilla/5.0 (Linux; Android 13; Pixel 7 Pro) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Mobile Safari/537.36",
@@ -1116,7 +1120,7 @@ class BalanceManager:
             "total_earnings": round(total_earnings, 2),
             "estimated_balance": total_online * self.balance_config["balance_per_online"]
         }
-
+balance_manager = BalanceManager()
 
 # Custom logging filter to mask sensitive data
 class SensitiveDataFilter(logging.Filter):
