@@ -732,7 +732,12 @@ class AutoNumberMonitor:
         """চেক করুন ইউজার মনিটরিং করছে কিনা"""
         user_id_str = str(user_id)
         return user_id_str in self.user_tasks and user_id_str in self.user_data and self.user_data[user_id_str].get('is_active', False)
-    
+
+
+    def get_status(self, user_id):
+        """Return monitoring status info for a user"""
+        return self.active_monitors.get(user_id)
+        
     def get_monitoring_status(self, user_id: int):
         """মনিটরিং স্ট্যাটাস রিটার্ন করুন"""
         user_id_str = str(user_id)
