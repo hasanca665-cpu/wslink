@@ -482,6 +482,7 @@ def get_random_priority():
 
 
 # Auto monitoring system
+# Auto monitoring system - COMPLETELY FIXED VERSION
 class AutoNumberMonitor:
     def __init__(self, application):
         self.application = application
@@ -489,7 +490,8 @@ class AutoNumberMonitor:
         self.user_tasks = {}
         self.user_data = {}
         self.processed_numbers = defaultdict(set)
-        self.user_prev_online = defaultdict(set)  # প্রতিটি ইউজারের জন্য আলাদা previous online ট্র্যাক করুন
+        self.user_prev_online = defaultdict(set)
+        self.token_to_user_map = {}  # ✅ টোকেন থেকে ইউজার ম্যাপিং
         
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
         """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন"""
@@ -499,12 +501,17 @@ class AutoNumberMonitor:
             logger.info(f"Auto monitoring already running for user {user_id}")
             return
         
+        # ✅ টোকেন থেকে ইউজার ম্যাপিং স্টোর করুন
+        token_key = f"{website}_{token[:20]}"  # ইউনিক আইডেন্টিফায়ার
+        self.token_to_user_map[token_key] = user_id
+        
         # Store user data
         self.user_data[user_id_str] = {
             'website': website,
             'token': token,
             'device_name': device_name,
-            'last_check': None
+            'last_check': None,
+            'token_key': token_key
         }
         
         # Initialize previous online for this user
@@ -522,17 +529,29 @@ class AutoNumberMonitor:
         user_id_str = str(user_id)
         if user_id_str in self.user_tasks:
             self.user_tasks[user_id_str].cancel()
-            del self.user_tasks[user_id_str]
+            
+            # ✅ টোকেন ম্যাপিংও ডিলিট করুন
             if user_id_str in self.user_data:
+                token_key = self.user_data[user_id_str].get('token_key')
+                if token_key in self.token_to_user_map:
+                    del self.token_to_user_map[token_key]
                 del self.user_data[user_id_str]
+                
             if user_id_str in self.processed_numbers:
                 del self.processed_numbers[user_id_str]
             if user_id_str in self.user_prev_online:
                 del self.user_prev_online[user_id_str]
+                
+            del self.user_tasks[user_id_str]
             logger.info(f"Stopped auto monitoring for user {user_id}")
             
+    def get_user_id_from_token(self, website: str, token: str):
+        """টোকেন থেকে ইউজার আইডি খুঁজে বের করুন"""
+        token_key = f"{website}_{token[:20]}"
+        return self.token_to_user_map.get(token_key)
+    
     async def _monitor_user_numbers(self, user_id: int, website: str, token: str, device_name: str):
-        """ইউজারের নাম্বারগুলো মনিটর করুন - FIXED VERSION"""
+        """ইউজারের নাম্বারগুলো মনিটর করুন - COMPLETELY FIXED"""
         website_config = WEBSITE_CONFIGS[website]
         user_id_str = str(user_id)
         
@@ -586,25 +605,26 @@ class AutoNumberMonitor:
                         
                         if status == 1:
                             current_online.add(phone)
-                            # ✅ CRITICAL FIX: Check if this is TRULY a new online number
                             if phone not in self.user_prev_online[user_id_str]:
                                 new_online_numbers.append(phone)
                                 logger.info(f"🆕 Auto monitoring: New online number detected for user {user_id}: {phone}")
 
-                    # ✅ CRITICAL FIX: Process new online numbers BEFORE updating previous
+                    # ✅ Process new online numbers
                     if new_online_numbers:
                         logger.info(f"🎉 Auto monitoring: {len(new_online_numbers)} new online numbers for user {user_id}")
                         for phone in new_online_numbers:
                             # Check if not already processed in this session
-                            if phone not in self.processed_numbers[user_id_str]:
+                            processing_key = f"{website}_{phone}"
+                            if processing_key not in self.processed_numbers[user_id_str]:
+                                # ✅ FIXED: সঠিক ইউজার আইডি ব্যবহার করুন
                                 result = balance_manager.add_online_number(user_id, website, phone)
-                                self.processed_numbers[user_id_str].add(phone)  # Mark as processed
+                                self.processed_numbers[user_id_str].add(processing_key)  # Mark as processed
                                 logger.info(f"💰 Auto monitoring: Balance added for user {user_id}: +{result['balance_added']} BDT for {phone}")
                                 
-                                # নাম্বার successfulভাবে online হলে restriction এড করুন
-                                number_tracker.record_number_submission(phone, user_id)
+                                # ✅ FIXED: টাস্ক-ওয়াইজ রেস্ট্রিকশন
+                                number_tracker.record_number_submission(phone, user_id, website)
                                 
-                                # ✅ CRITICAL FIX: ইউজারকে নোটিফাই করুন - GUARANTEED
+                                # ✅ FIXED: সঠিক ইউজারকে নোটিফাই করুন
                                 try:
                                     user_stats = balance_manager.get_user_stats(user_id)
                                     if user_stats:
@@ -614,30 +634,20 @@ class AutoNumberMonitor:
                                             f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
                                             f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
                                             f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                                            f"🌐 Task নাম্বার: {website}\n\n"
+                                            f"🌐 Task: {website}\n\n"
                                             f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
                                             f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
                                         )
                                         await self.application.bot.send_message(
-                                            user_id,
+                                            user_id,  # ✅ সঠিক ইউজার আইডি
                                             notification_msg,
                                             parse_mode='Markdown'
                                         )
                                         logger.info(f"📨 Auto notification sent to user {user_id} for new online number {phone}")
                                 except Exception as e:
                                     logger.error(f"❌ Error notifying user in auto monitoring: {str(e)}")
-                                    # Retry notification
-                                    try:
-                                        await asyncio.sleep(2)
-                                        await self.application.bot.send_message(
-                                            user_id,
-                                            f"🎉 নতুন নাম্বার অনলাইন: {phone}",
-                                            parse_mode='Markdown'
-                                        )
-                                    except Exception as retry_e:
-                                        logger.error(f"❌ Retry notification also failed: {str(retry_e)}")
 
-                    # ✅ CRITICAL FIX: Update previous online status AFTER processing
+                    # Update previous online status
                     self.user_prev_online[user_id_str] = current_online
 
             except asyncio.CancelledError:
@@ -649,6 +659,8 @@ class AutoNumberMonitor:
 
     def is_user_monitoring(self, user_id: int):
         return str(user_id) in self.user_tasks
+
+    
 
 
 # Number tracking system
@@ -675,50 +687,61 @@ class NumberTracking:
         except Exception as e:
             logger.error(f"Error saving number tracking data: {str(e)}")
     
-    def can_submit_number(self, phone_number: str, user_id: int) -> bool:
-        """চেক করুন যে ইউজার এই নাম্বারটি ১ ঘন্টার মধ্যে submit করতে পারবে কিনা"""
+    def can_submit_number(self, phone_number: str, user_id: int, website: str) -> bool:
+        """চেক করুন যে ইউজার এই নাম্বারটি এই টাস্কে ২৪ ঘন্টার মধ্যে submit করতে পারবে কিনা"""
         user_id_str = str(user_id)
         
         if user_id_str not in self.tracking_data:
             return True
         
-        if phone_number not in self.tracking_data[user_id_str]:
+        user_data = self.tracking_data[user_id_str]
+        
+        # ✅ FIXED: টাস্ক-ওয়াইজ চেক করুন
+        tracking_key = f"{website}_{phone_number}"
+        
+        if tracking_key not in user_data:
             return True
         
-        last_submit_time = self.tracking_data[user_id_str][phone_number]
+        last_submit_time = user_data[tracking_key]
         current_time = time.time()
         
-        # ১ ঘন্টা (3600 সেকেন্ড) অপেক্ষা করতে হবে
+        # ২৪ ঘন্টা (86400 সেকেন্ড) অপেক্ষা করতে হবে
         if current_time - last_submit_time >= 86400:
             # সময় পার হয়ে গেলে রেকর্ড ডিলিট করুন
-            del self.tracking_data[user_id_str][phone_number]
+            del self.tracking_data[user_id_str][tracking_key]
             self.save_data()
             return True
         
         return False
     
-    def record_number_submission(self, phone_number: str, user_id: int):
-        """নাম্বার successfulভাবে online হলে রেকর্ড রাখুন"""
+    def record_number_submission(self, phone_number: str, user_id: int, website: str):
+        """নাম্বার successfulভাবে online হলে টাস্ক-ওয়াইজ রেকর্ড রাখুন"""
         user_id_str = str(user_id)
         
         if user_id_str not in self.tracking_data:
             self.tracking_data[user_id_str] = {}
         
-        self.tracking_data[user_id_str][phone_number] = time.time()
+        # ✅ FIXED: টাস্ক-ওয়াইজ ট্র্যাকিং কী
+        tracking_key = f"{website}_{phone_number}"
+        self.tracking_data[user_id_str][tracking_key] = time.time()
         self.save_data()
-        logger.info(f"Number {phone_number} restricted for user {user_id_str} for 1 hour")
+        logger.info(f"Number {phone_number} restricted for user {user_id_str} on {website} for 24 hours")
     
-    def get_remaining_time(self, phone_number: str, user_id: int) -> int:
-        """কত সময় বাকি আছে তা রিটার্ন করুন (সেকেন্ডে)"""
+    def get_remaining_time(self, phone_number: str, user_id: int, website: str) -> int:
+        """কত সময় বাকি আছে তা রিটার্ন করুন (সেকেন্ডে) - টাস্ক-ওয়াইজ"""
         user_id_str = str(user_id)
         
-        if user_id_str not in self.tracking_data or phone_number not in self.tracking_data[user_id_str]:
+        tracking_key = f"{website}_{phone_number}"
+        
+        if user_id_str not in self.tracking_data or tracking_key not in self.tracking_data[user_id_str]:
             return 0
         
-        last_submit_time = self.tracking_data[user_id_str][phone_number]
+        last_submit_time = self.tracking_data[user_id_str][tracking_key]
         current_time = time.time()
         elapsed = current_time - last_submit_time
         remaining = 86400 - elapsed
+        
+        
         
         return max(0, int(remaining))
 
@@ -1221,14 +1244,14 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
 
     keyboard = [
-        [KeyboardButton("Log in Account"), KeyboardButton(link_text)],   # Row 1
-        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],      # Row 2
-        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)]  # Row 3
+        [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # 1st row
+        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],      # 2nd row
+        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)]  # 3rd row: side by side
     ]
 
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("Admin Panel")])  # Row 4 (only for admin)
+        keyboard.append([KeyboardButton("Admin Panel")])  # 4th row (only for admin)
 
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
@@ -1365,7 +1388,7 @@ def encrypt_username(plain_text: str) -> str:
     encrypted_bytes = cipher.encrypt(padded_text)
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
-async def login_with_credentials(username, password, website_config, device_name):
+async def login_with_credentials(username, password, website_config, device_name, user_id=None, account_type=None, website=None):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
             try:
@@ -1388,49 +1411,70 @@ async def login_with_credentials(username, password, website_config, device_name
                     "username": username,
                     "password": password
                 }
+
                 await asyncio.sleep(random.uniform(0.5, 2.0))
+
                 async with asyncio.timeout(REQUEST_TIMEOUT):
                     async with session.post(url, headers=headers, data=data) as response:
                         response_data = await response.json()
+
+                        # ✅ Successful login check
                         if response_data.get("code") == 1:
-                            token = response_data.get("data", {}).get("token")
-                            if not token:
-                                token = response_data.get("data", {}).get("userinfo", {}).get("token")
+                            token = (
+                                response_data.get("data", {}).get("token")
+                                or response_data.get("data", {}).get("userinfo", {}).get("token")
+                            )
+
                             if token:
-                                return {
+                                result = {
                                     "success": True,
                                     "token": token,
                                     "response": response_data
                                 }
+
+                                # ✅ Save token if info available
+                                if user_id and account_type and website:
+                                    try:
+                                        await save_token(user_id, account_type, token, website)
+                                        logger.info(f"💾 Token saved for user {user_id} ({website})")
+                                    except Exception as e:
+                                        logger.error(f"⚠️ Token save failed: {e}")
+
+                                # ✅ Start auto monitoring if available
+                                global auto_monitor
+                                if 'auto_monitor' in globals() and auto_monitor and token:
+                                    try:
+                                        await auto_monitor.start_monitoring(user_id, website, token, device_name)
+                                        logger.info(f"✅ Auto monitoring started for user {user_id} on {website}")
+                                    except Exception as e:
+                                        logger.error(f"⚠️ Auto monitoring failed: {e}")
+
+                                return result
+
+                            # ✅ Login success but no token
                             return {
                                 "success": False,
                                 "error": "✅ Login successful but no token received",
                                 "response": response_data
                             }
+
+                        # ❌ Invalid credentials
                         return {
                             "success": False,
                             "error": "🔑 Invalid credentials",
                             "response": response_data
                         }
+
             except asyncio.TimeoutError:
                 if attempt == MAX_RETRIES - 1:
-                    error_msg = "⏰ Connection timeout"
-                    logger.error(error_msg)
-                    return {
-                        "success": False,
-                        "error": error_msg,
-                        "response": None
-                    }
+                    logger.error("⏰ Connection timeout")
+                    return {"success": False, "error": "⏰ Connection timeout", "response": None}
                 await asyncio.sleep(1)
+
             except Exception as e:
                 if attempt == MAX_RETRIES - 1:
-                    error_msg = "🌐 Connection failed"
-                    logger.error(error_msg)
-                    return {
-                        "success": False,
-                        "error": error_msg,
-                        "response": None
-                    }
+                    logger.error(f"🌐 Connection failed: {e}")
+                    return {"success": False, "error": "🌐 Connection failed", "response": None}
                 await asyncio.sleep(1)
 
 async def register_account(website_config, phone_number, password, confirm_password, invite_code, device_name, reg_host):
@@ -3062,17 +3106,19 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
         return
 
     # ✅ ১ ঘন্টার restriction চেক (শুধুমাত্র successful নাম্বারের জন্য)
-    if not number_tracker.can_submit_number(normalized_phone, user_id):
-        remaining_time = number_tracker.get_remaining_time(normalized_phone, user_id)
+    if not number_tracker.can_submit_number(normalized_phone, user_id, website):
+        remaining_time = number_tracker.get_remaining_time(normalized_phone, user_id, website)
         hours = remaining_time // 3600
         minutes = (remaining_time % 3600) // 60
         
         await update.message.reply_text(
             f"⏰ **এই নাম্বারটি আবার submit করতে হবে:**\n\n"
             f"📱 নাম্বার: `{normalized_phone}`\n"
+            f"🌐 Task: {website}\n"
             f"⏳ বাকি সময়: {hours} ঘন্টা {minutes} মিনিট\n\n"
-            f"ℹ️ এই নাম্বারটি ইতিমধ্যে successful ভাবে online হয়েছে।\n"
-            f"একই নাম্বার 24 ঘন্টার আগে আবার submit করা যাবে না।",
+            f"ℹ️ এই নাম্বারটি ইতিমধ্যে {website} এ successful ভাবে online হয়েছে।\n"
+            f"একই নাম্বার 24 ঘন্টার আগে আবার submit করা যাবে না।\n"
+            f"✅ কিন্তু অন্য Task-এ submit করতে পারবেন!",
             parse_mode='Markdown',
             reply_markup=get_main_keyboard(selected_website, user_id)
         )
