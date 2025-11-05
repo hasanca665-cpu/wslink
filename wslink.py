@@ -2703,6 +2703,61 @@ async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=get_website_selection_keyboard()
     )
 
+async def monitor_status(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """মনিটরিং স্ট্যাটাস চেক করার কমান্ড - শুধুমাত্র বর্তমান ইউজারের জন্য"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    global auto_monitor
+    
+    # ✅ চেক করুন যে auto_monitor initialized কিনা
+    if not auto_monitor:
+        await update.message.reply_text(
+            "❌ মনিটরিং সিস্টেম এখনও শুরু হয়নি। বট রিস্টার্ট করুন।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # ✅ শুধুমাত্র বর্তমান ইউজারের স্ট্যাটাস দেখান
+    status = auto_monitor.get_monitoring_status(user_id)
+    
+    if status:
+        # Last check time format করুন
+        last_check = status['last_check']
+        if last_check:
+            try:
+                last_check_dt = datetime.fromisoformat(last_check)
+                last_check_str = last_check_dt.strftime("%Y-%m-%d %H:%M:%S")
+            except:
+                last_check_str = last_check
+        else:
+            last_check_str = "কখনও না"
+        
+        message = (
+            f"🔍 **আপনার মনিটরিং স্ট্যাটাস:**\n\n"
+            f"🌐 **টাস্ক:** {status['website']}\n"
+            f"📱 **ডিভাইস:** {status['device']}\n"
+            f"🔄 **চলছে:** {'✅ হ্যাঁ' if status['is_running'] else '❌ না'}\n"
+            f"⏰ **সর্বশেষ চেক:** {last_check_str}\n"
+            f"👤 **ইউজার আইডি:** {user_id}\n\n"
+            f"💡 প্রতি ৩০ সেকেন্ডে নতুন নাম্বার চেক করা হয়"
+        )
+    else:
+        message = (
+            "❌ **কোনো একটিভ মনিটরিং নেই।**\n\n"
+            "মনিটরিং শুরু করতে:\n"
+            "1. 'Set User Agent' ক্লিক করুন\n" 
+            "2. 'Log in Account' দিয়ে লগইন করুন\n"
+            "3. অটোমেটিক মনিটরিং শুরু হয়ে যাবে!\n\n"
+            "বর্তমান লগইন স্ট্যাটাস চেক করতে 'My Balance' ক্লিক করুন।"
+        )
+    
+    await update.message.reply_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
+
 async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
@@ -3664,20 +3719,23 @@ def main():
         app.add_handler(CommandHandler("reject", reject_withdrawal_command))
         app.add_handler(CommandHandler("setincome", set_income_percentage_command))
         
+        # ✅ NEW: Monitor status command
+        app.add_handler(CommandHandler("monitorstatus", monitor_status))
+        
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         app.add_handler(CallbackQueryHandler(handle_callback_query))
         
         # Use the safe error handler
         app.add_error_handler(error_handler)
 
-        logger.info("🤖 Bot is starting with CONFLICT-FIXED system...")
+        logger.info("🤖 Bot is starting with MONITOR STATUS command...")
         print("✅ Bot started successfully!")
-        print("🔧 Fixed: 409 Conflict errors COMPLETELY handled")
+        print("🔧 New: /monitorstatus command added")
         
         # ✅ IMPROVED polling with conflict resolution
         app.run_polling(
             allowed_updates=Update.ALL_TYPES,
-            poll_interval=3,  # Increased to 3 seconds
+            poll_interval=3,
             timeout=60,
             drop_pending_updates=True,
             close_loop=False
@@ -3688,7 +3746,7 @@ def main():
         print(f"❌ Bot failed: {str(e)}")
         print("🔄 Restarting in 5 seconds...")
         time.sleep(5)
-        main()  # Auto-restart
+        main()
 
 # ==============================================
 # BASIC WEB SERVER FOR RENDER
