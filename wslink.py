@@ -409,7 +409,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },"TASK 2": {
+    },
+    "TASK 2": {
         "name": "SMS",
         "api_domain": "https://sms323.club/",
         "origin": "https://sms323.com",
@@ -420,7 +421,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },"TASK 3": {
+    },
+    "TASK 3": {
         "name": "OK",
         "api_domain": "https://ok8job.cc/",
         "origin": "https://www.ok8job.net",
@@ -431,7 +433,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://ok8job.cc/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },"TASK 4": {
+    },
+    "TASK 4": {
         "name": "TG",
         "api_domain": "https://tg377.club/",
         "origin": "https://tg377.vip",
@@ -442,7 +445,18 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    }
+    "TASK 5": {
+        "name": "DIY",
+        "api_domain": "https://diy22.club/",
+        "origin": "https://diy22.net",
+        "referer": "https://diy22.net/",
+        "login_path": "api/user/signIn",
+        "send_code_path": "api/ws_phone/sendCode",
+        "get_code_path": "api/ws_phone/getCode",
+        "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
+        "signup_path": "api/user/signUp",
+        "referral_field": "invite_code"
+    }     
 }
 
 # Fixed headers for consistency
