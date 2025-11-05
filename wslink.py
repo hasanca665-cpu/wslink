@@ -1060,9 +1060,9 @@ class BalanceManager:
             k: v for k, v in self.withdrawal_requests.items() 
             if v.get("status") == "pending"
         }
+    
     def get_all_users_stats(self):
-    """সকল ইউজারের সামারি স্ট্যাটস রিটার্ন করুন - FIXED VERSION"""
-    with self.lock:
+        """সকল ইউজারের সামারি স্ট্যাটস রিটার্ন করুন"""
         total_balance = 0.0
         total_lifetime = 0.0
         total_withdrawn = 0.0
@@ -1088,8 +1088,7 @@ class BalanceManager:
         }
     
     def get_today_stats(self):
-    """আজকের সামারি স্ট্যাটস রিটার্ন করুন - FIXED VERSION"""
-    with self.lock:
+        """আজকের সামারি স্ট্যাটস রিটার্ন করুন"""
         today_key = self.get_today_key()
         today_data = self.daily_stats.get(today_key, {})
         
@@ -1629,34 +1628,13 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         return
     
-    # ✅ Get fresh stats
-    all_stats = balance_manager.get_all_users_stats()
-    today_stats = balance_manager.get_today_stats()
-    
     admin_menu = (
         "🛠️ **এডমিন প্যানেল**\n\n"
         "📊 বর্তমান সেটিংস:\n"
         f"• ব্যালেন্স রেট: {balance_manager.balance_config['balance_per_online']} BDT\n"
-        f"• ইনকাম পার্সেন্টেজ: {balance_manager.balance_config.get('income_percentage', 100)}%\n"
-        f"• মিনিমাম উত্তোলন: {balance_manager.balance_config.get('min_withdrawal', 50)} BDT\n\n"
-        
-        "📈 সামারি স্ট্যাটস:\n"
-        f"• মোট ইউজার: {all_stats['total_users']} জন\n"
-        f"• একটিভ ইউজার: {all_stats['active_users']} জন\n"
-        f"• মোট ব্যালেন্স: {all_stats['total_balance']} BDT\n"
-        f"• মোট আয়: {all_stats['total_lifetime']} BDT\n"
-        f"• মোট উত্তোলন: {all_stats['total_withdrawn']} BDT\n"
-        f"• মোট অনলাইন: {all_stats['total_online_count']} টি\n\n"
-        
-        "📅 আজকের স্ট্যাটস:\n"
-        f"• তারিখ: {today_stats['date']}\n"
-        f"• একটিভ ইউজার: {today_stats['active_users']} জন\n"
-        f"• আজকের অনলাইন: {today_stats['total_online']} টি\n"
-        f"• আজকের আয়: {today_stats['total_earnings']} BDT\n\n"
-        
+        f"• মোট ইউজার: {len(balance_manager.user_balances)} জন\n\n"
         "⚡ দ্রুত কমান্ড:\n"
         "• /setrate 0.50 - ব্যালেন্স রেট সেট করুন\n"
-        "• /setincome 50 - ইনকাম পার্সেন্টেজ সেট করুন\n"
         "• /userbalance 123456 - ইউজারের ব্যালেন্স দেখুন\n"
         "• /setbalance 123456 100 - ইউজারের ব্যালেন্স সেট করুন\n"
         "• /allusers - সব ইউজারের লিস্ট\n"
@@ -1671,7 +1649,6 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown',
         reply_markup=get_main_keyboard(selected_website, user_id)
     )
-    
 
 async def set_balance_rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -1835,29 +1812,26 @@ async def all_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ কোনো ইউজার নেই।")
         return
     
-    # ✅ Fresh data load করুন
-    balance_manager.load_data()
-    
     total_balance = 0
     total_lifetime = 0
     total_withdrawn = 0
     
     users_list = []
     for user_id_str, data in balance_manager.user_balances.items():
-        total_balance += data.get("total_balance", 0)
-        total_lifetime += data.get("lifetime_earnings", 0)
-        total_withdrawn += data.get("withdrawn_amount", 0)
+        total_balance += data["total_balance"]
+        total_lifetime += data["lifetime_earnings"]
+        total_withdrawn += data["withdrawn_amount"]
         
         users_list.append(
-            f"👤 {user_id_str} | 💰 {data.get('total_balance', 0):.2f} BDT | 🏆 {data.get('lifetime_earnings', 0):.2f} BDT"
+            f"👤 {user_id_str} | 💰 {data['total_balance']} BDT | 🏆 {data['lifetime_earnings']} BDT"
         )
     
     message = (
         f"📊 **সকল ইউজার স্ট্যাটস**\n\n"
         f"👥 মোট ইউজার: {len(balance_manager.user_balances)} জন\n"
-        f"💵 মোট ব্যালেন্স: {total_balance:.2f} BDT\n"
-        f"🏆 মোট আয়: {total_lifetime:.2f} BDT\n"
-        f"💸 মোট উত্তোলন: {total_withdrawn:.2f} BDT\n\n"
+        f"💵 মোট ব্যালেন্স: {total_balance} BDT\n"
+        f"🏆 মোট আয়: {total_lifetime} BDT\n"
+        f"💸 মোট উত্তোলন: {total_withdrawn} BDT\n\n"
         f"**ইউজার লিস্ট:**\n" + "\n".join(users_list[:20])  # First 20 users only
     )
     
@@ -1874,27 +1848,31 @@ async def today_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
         await update.message.reply_text("❌ শুধুমাত্র এডমিন এই কমান্ড ব্যবহার করতে পারবেন।")
         return
     
-    # ✅ Fresh data load করুন
-    balance_manager.load_data()
-    today_stats = balance_manager.get_today_stats()
+    today_key = balance_manager.get_today_key()
+    today_data = balance_manager.daily_stats.get(today_key, {})
     
-    if today_stats['active_users'] == 0:
+    if not today_data:
         await update.message.reply_text("❌ আজকের কোনো ডেটা নেই।")
         return
     
+    total_online = 0
+    total_users = len(today_data)
+    
+    for user_data in today_data.values():
+        total_online += user_data.get("online_count", 0)
+    
+    total_balance = total_online * balance_manager.balance_config["balance_per_online"]
+    
     message = (
-        f"📊 **আজকের স্ট্যাটস ({today_stats['date']})**\n\n"
-        f"👥 সক্রিয় ইউজার: {today_stats['active_users']} জন\n"
-        f"🟢 মোট অনলাইন: {today_stats['total_online']} টি\n"
-        f"💰 মোট আয়: {today_stats['total_earnings']} BDT\n"
+        f"📊 **আজকের স্ট্যাটস ({today_key})**\n\n"
+        f"👥 সক্রিয় ইউজার: {total_users} জন\n"
+        f"🟢 মোট অনলাইন: {total_online} টি\n"
+        f"💰 মোট ব্যালেন্স: {total_balance} BDT\n"
         f"📈 প্রতি অনলাইন: {balance_manager.balance_config['balance_per_online']} BDT\n\n"
         f"**ইউজার অনুযায়ী:**"
     )
     
-    # Top users today
-    today_key = balance_manager.get_today_key()
-    today_data = balance_manager.daily_stats.get(today_key, {})
-    
+    # Top 10 users today
     sorted_users = sorted(
         today_data.items(),
         key=lambda x: x[1].get("online_count", 0),
@@ -1903,8 +1881,8 @@ async def today_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     for i, (user_id_str, data) in enumerate(sorted_users, 1):
         online_count = data.get("online_count", 0)
-        user_earnings = data.get("total_earnings", 0.0)
-        message += f"\n{i}. 👤 {user_id_str} | 🟢 {online_count} | 💰 {user_earnings:.2f} BDT"
+        user_balance = online_count * balance_manager.balance_config["balance_per_online"]
+        message += f"\n{i}. 👤 {user_id_str} | 🟢 {online_count} | 💰 {user_balance} BDT"
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
@@ -2389,6 +2367,7 @@ async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"Please select a website for account login:",
         reply_markup=get_website_selection_keyboard()
     )
+
 async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
@@ -2443,7 +2422,6 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 reply_markup=get_main_keyboard(selected_website, user_id)
             )
         return
-
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
