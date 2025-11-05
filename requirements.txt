@@ -5,3 +5,4 @@ pycryptodome
 pytz
 requests
 psutil
+brotli
