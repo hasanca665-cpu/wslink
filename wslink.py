@@ -1672,7 +1672,7 @@ async def admin_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode='Markdown',
         reply_markup=get_main_keyboard(selected_website, user_id)
     )
-    )
+    
 
 async def set_balance_rate_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
