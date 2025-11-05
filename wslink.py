@@ -365,7 +365,7 @@ async def select_random_proxy():
 # Constants
 KEY = b'djchdnfkxnjhgvuy'
 IV = b'ayghjuiklobghfrt'
-TELEGRAM_TOKEN = "7561853965:AAFFQRhzedcQZTFE46fDYepe6JYhneyLnHo"
+TELEGRAM_TOKEN = "8266441211:AAH7R19FNjzF42bjpoYaPKsK9MdgYRUGORU"
 ADMIN_ID = 5624278091
 TOKEN_FILE = "tokens.json"
 USER_STATUS_FILE = "user_status.json"
@@ -491,7 +491,7 @@ class AutoNumberMonitor:
         logger.info("🔄 New AutoNumberMonitor initialized - 100% working version")
     
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
-        """নতুন এবং সহজ মনিটরিং সিস্টেম - FIXED VERSION"""
+        """নতুন এবং সহজ মনিটরিং সিস্টেম - ১০০% কাজ করবে"""
         user_id_str = str(user_id)
         
         async with self.lock:
@@ -500,18 +500,18 @@ class AutoNumberMonitor:
                 try:
                     self.user_tasks[user_id_str].cancel()
                     await asyncio.sleep(1)
+                    del self.user_tasks[user_id_str]
                 except Exception as e:
                     logger.error(f"Error stopping previous monitoring: {e}")
             
-            # নতুন ইউজার ডেটা সেট করুন - FIXED: token_exists যোগ করুন
+            # নতুন ইউজার ডেটা সেট করুন
             self.user_data[user_id_str] = {
                 'website': website,
                 'token': token,
                 'device_name': device_name,
                 'last_check': datetime.now().isoformat(),
                 'is_active': True,
-                'processed_numbers': set(),
-                'token_exists': bool(token)  # ✅ ADD THIS LINE
+                'processed_numbers': set()
             }
             
             # নতুন টাস্ক শুরু করুন
@@ -521,26 +521,6 @@ class AutoNumberMonitor:
             
             logger.info(f"🚀 NEW MONITORING started for user {user_id} on {website}")
             return True
-    
-    def get_monitoring_status(self, user_id: int):
-        """মনিটরিং স্ট্যাটাস রিটার্ন করুন - FIXED VERSION"""
-        user_id_str = str(user_id)
-        if user_id_str in self.user_data:
-            data = self.user_data[user_id_str]
-            is_running = self.is_user_monitoring(user_id)
-            device_exists = device_manager.exists(data['device_name'])
-            
-            return {
-                'website': data['website'],
-                'device': data['device_name'],
-                'last_check': data['last_check'],
-                'is_running': is_running,
-                'token_exists': data.get('token_exists', False),  # ✅ FIXED
-                'device_exists': device_exists
-            }
-        return None
-
-    # ... বাকি মেথডগুলো একই থাকবে ...
     
     async def stop_monitoring(self, user_id: int):
         """মনিটরিং বন্ধ করুন"""
@@ -564,61 +544,55 @@ class AutoNumberMonitor:
                 return True
             
             return False
-async def _simple_monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
-    """সরল এবং নির্ভরযোগ্য মনিটরিং লুপ - FIXED VERSION"""
-    user_id_str = str(user_id)
-    website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
     
-    logger.info(f"🔄 Simple monitor loop STARTED for user {user_id} on {website}")
-    
-    loop_count = 0
-    try:
-        while True:
-            try:
-                loop_count += 1
-                # 30 সেকেন্ড অপেক্ষা করুন
-                await asyncio.sleep(30)
-                
-                # ✅ FIXED: ইউজার ডেটা চেক করুন
-                if user_id_str not in self.user_data:
-                    logger.info(f"❌ User data missing for {user_id} - exiting loop")
-                    break
-                
-                if not self.user_data[user_id_str].get('is_active', True):
-                    logger.info(f"🛑 Monitoring stopped for user {user_id} - exiting loop")
-                    break
-                
-                # ফোন লিস্ট ফেচ করুন
-                logger.info(f"🔄 Loop #{loop_count}: Fetching phone list for user {user_id}")
-                current_online = await self._fetch_simple_phone_list(user_id, website, token, device_name)
-                
-                # শেষ চেক টাইম আপডেট করুন
-                self.user_data[user_id_str]['last_check'] = datetime.now().isoformat()
-                
-                # নতুন নাম্বার প্রসেস করুন
-                if current_online:
-                    await self._process_simple_numbers(user_id, website, current_online)
-                else:
-                    logger.info(f"📱 Loop #{loop_count}: No online numbers for user {user_id}")
-                
-            except asyncio.CancelledError:
-                logger.info(f"🛑 Monitoring CANCELLED for user {user_id}")
-                break
-            except Exception as e:
-                logger.error(f"❌ Error in monitor loop #{loop_count} for user {user_id}: {str(e)}")
-                await asyncio.sleep(10)  # ত্রুটি হলে 10 সেকেন্ড অপেক্ষা করুন
+    async def _simple_monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
+        """সরল এবং নির্ভরযোগ্য মনিটরিং লুপ"""
+        user_id_str = str(user_id)
+        website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
         
-    except Exception as e:
-        logger.error(f"💥 Monitor loop CRASHED for user {user_id}: {str(e)}")
-    finally:
-        # ক্লিনআপ
-        async with self.lock:
-            if user_id_str in self.user_tasks:
+        logger.info(f"🔄 Simple monitor loop started for user {user_id} on {website}")
+        
+        try:
+            while True:
                 try:
-                    del self.user_tasks[user_id_str]
-                except:
-                    pass
-        logger.info(f"✅ Monitor loop EXITED for user {user_id} after {loop_count} loops")
+                    # 30 সেকেন্ড অপেক্ষা করুন
+                    await asyncio.sleep(30)
+                    
+                    # ইউজার ডেটা চেক করুন
+                    if user_id_str not in self.user_data or not self.user_data[user_id_str].get('is_active', True):
+                        logger.info(f"Monitoring stopped for user {user_id} - exiting loop")
+                        break
+                    
+                    # ফোন লিস্ট ফেচ করুন
+                    current_online = await self._fetch_simple_phone_list(user_id, website, token, device_name)
+                    if current_online is None:
+                        continue
+                    
+                    # শেষ চেক টাইম আপডেট করুন
+                    self.user_data[user_id_str]['last_check'] = datetime.now().isoformat()
+                    
+                    # নতুন নাম্বার প্রসেস করুন
+                    if current_online:
+                        await self._process_simple_numbers(user_id, website, current_online)
+                    
+                except asyncio.CancelledError:
+                    logger.info(f"Monitoring cancelled for user {user_id}")
+                    break
+                except Exception as e:
+                    logger.error(f"Error in simple monitor loop for user {user_id}: {str(e)}")
+                    await asyncio.sleep(10)  # ত্রুটি হলে 10 সেকেন্ড অপেক্ষা করুন
+        
+        except Exception as e:
+            logger.error(f"Monitor loop crashed for user {user_id}: {str(e)}")
+        finally:
+            # ক্লিনআপ
+            async with self.lock:
+                if user_id_str in self.user_tasks:
+                    try:
+                        del self.user_tasks[user_id_str]
+                    except:
+                        pass
+            logger.info(f"✅ Monitor loop exited for user {user_id}")
     
     async def _fetch_simple_phone_list(self, user_id: int, website: str, token: str, device_name: str):
         """সরল ফোন লিস্ট ফেচিং"""
@@ -1532,79 +1506,49 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ FIXED: ডিবাগ ইনফো যোগ করুন
+    # ✅ FIXED: শুধুমাত্র সিলেক্টেড ওয়েবসাইটের জন্য মনিটরিং রিস্টার্ট করুন
     tokens = load_tokens()
-    user_tokens = tokens.get(str(user_id), {})
-    
-    logger.info(f"🔍 User {user_id} tokens: {list(user_tokens.keys())}")
-    logger.info(f"🔍 Selected website: {selected_website}")
-    
     if str(user_id) in tokens and selected_website in tokens[str(user_id)]:
         token = tokens[str(user_id)][selected_website].get('main')
         device_name = str(user_id)
-        device_exists = device_manager.exists(device_name)
         
-        logger.info(f"🔍 Token exists: {bool(token)}, Device exists: {device_exists}")
-        
-        if device_exists and token:
+        if device_manager.exists(device_name) and token:
             global auto_monitor
             if auto_monitor:
-                # ✅ FIXED: সঠিক লজিক - সবসময় মনিটরিং রিস্টার্ট করুন
+                # শুধুমাত্র যদি মনিটরিং না চলতে থাকে অথবা ভিন্ন ওয়েবসাইটে চলতে থাকে
                 current_status = auto_monitor.get_monitoring_status(user_id)
-                logger.info(f"🔍 Current monitoring status: {current_status}")
-                
-                # সবসময় মনিটরিং রিস্টার্ট করার চেষ্টা করুন
-                try:
-                    # পুরানো মনিটরিং বন্ধ করুন (যদি থাকে)
-                    if auto_monitor.is_user_monitoring(user_id):
-                        await auto_monitor.stop_monitoring(user_id)
-                        await asyncio.sleep(2)
-                    
-                    # নতুন মনিটরিং শুরু করুন
-                    success = await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
-                    if success:
-                        logger.info(f"✅ Auto monitoring STARTED for user {user_id} on {selected_website} via /start")
-                    else:
-                        logger.error(f"❌ Failed to start monitoring for user {user_id}")
+                if not current_status or current_status['website'] != selected_website:
+                    try:
+                        # পুরানো মনিটরিং বন্ধ করুন
+                        if auto_monitor.is_user_monitoring(user_id):
+                            await auto_monitor.stop_monitoring(user_id)
+                            await asyncio.sleep(2)
                         
-                except Exception as e:
-                    logger.error(f"❌ Failed to start auto monitoring: {str(e)}")
+                        # নতুন মনিটরিং শুরু করুন
+                        await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
+                        logger.info(f"✅ Auto monitoring STARTED for user {user_id} on {selected_website} via /start")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to start auto monitoring: {str(e)}")
+                else:
+                    logger.info(f"🔄 Auto monitoring already running for user {user_id} on {selected_website}")
     
     # Check if user has any accounts
     has_accounts = False
-    account_list = []
     if str(user_id) in tokens:
         for website in WEBSITE_CONFIGS:
             if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
                 has_accounts = True
-                account_list.append(website)
-    
-    logger.info(f"🔍 User {user_id} has accounts: {account_list}")
+                break
     
     if has_accounts:
-        # ✅ FIXED: মনিটরিং স্ট্যাটাস সঠিকভাবে দেখান
+        # ✅ FIXED: শুধুমাত্র বর্তমান সিলেক্টেড ওয়েবসাইটের স্ট্যাটাস দেখান
         current_status = auto_monitor.get_monitoring_status(user_id) if auto_monitor else None
-        
-        if current_status:
-            if current_status['is_running']:
-                monitoring_info = f"\n🤖 Auto monitoring: ✅ ACTIVE ({current_status['website']})"
-            else:
-                # ✅ FIXED: কেন ইনএক্টিভ তার কারণ দেখান
-                reasons = []
-                if not current_status['token_exists']:
-                    reasons.append("টোকেন নেই")
-                if not current_status['device_exists']:
-                    reasons.append("ডিভাইস নেই")
-                if not reasons:
-                    reasons.append("ম্যানুয়ালি বন্ধ করা")
-                
-                monitoring_info = f"\n🤖 Auto monitoring: ❌ INACTIVE ({', '.join(reasons)})"
+        if current_status and current_status['is_running']:
+            monitoring_info = f"\n🤖 Auto monitoring: ACTIVE ({current_status['website']})"
         else:
-            monitoring_info = "\n🤖 Auto monitoring: ⚠️ NOT CONFIGURED"
+            monitoring_info = "\n🤖 Auto monitoring: INACTIVE"
         
-        accounts_info = f"\n📋 Logged in tasks: {', '.join(account_list)}"
-        
-        message = f"✅ You have accounts setup!{accounts_info}\n\n{welcome_message}{monitoring_info}"
+        message = f"✅ You have accounts setup!\n\n{welcome_message}{monitoring_info}"
         logger.info(f"User {user_id} menu refreshed (logged in)")
     else:
         message = welcome_message
@@ -1773,72 +1717,6 @@ async def register_account(website_config, phone_number, password, confirm_passw
             "msg": f"Registration failed after {MAX_RETRIES} attempts",
             "data": None
         }
-
-async def force_restart_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """জোর করে মনিটরিং রিস্টার্ট করুন"""
-    user_id = update.message.from_user.id
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
-    
-    tokens = load_tokens()
-    
-    if str(user_id) not in tokens or selected_website not in tokens[str(user_id)]:
-        await update.message.reply_text(
-            f"❌ {selected_website} এ আপনার কোনো অ্যাকাউন্ট নেই। প্রথমে লগইন করুন।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    token = tokens[str(user_id)][selected_website].get('main')
-    device_name = str(user_id)
-    
-    if not device_manager.exists(device_name):
-        await update.message.reply_text(
-            "❌ প্রথমে 'Set User Agent' দিয়ে ডিভাইস সেট করুন।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    global auto_monitor
-    if not auto_monitor:
-        await update.message.reply_text(
-            "❌ মনিটরিং সিস্টেম প্রস্তুত নেই।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    try:
-        # বর্তমান মনিটরিং বন্ধ করুন
-        if auto_monitor.is_user_monitoring(user_id):
-            await auto_monitor.stop_monitoring(user_id)
-            await asyncio.sleep(2)
-        
-        # নতুন করে শুরু করুন
-        success = await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
-        
-        if success:
-            await update.message.reply_text(
-                f"✅ **মনিটরিং জোর করে রিস্টার্ট করা হয়েছে!**\n\n"
-                f"🌐 টাস্ক: {selected_website}\n"
-                f"👤 ইউজার: {user_id}\n"
-                f"🔄 এখন থেকে স্বয়ংক্রিয়ভাবে নাম্বার ডিটেক্ট হবে।",
-                parse_mode='Markdown',
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
-        else:
-            await update.message.reply_text(
-                "❌ মনিটরিং শুরু করতে ব্যর্থ হয়েছে।",
-                reply_markup=get_main_keyboard(selected_website, user_id)
-            )
-            
-    except Exception as e:
-        logger.error(f"Error in force restart: {str(e)}")
-        await update.message.reply_text(
-            f"❌ রিস্টার্ট করতে সমস্যা: {str(e)}",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-
-# কমান্ড হ্যান্ডলারে যোগ করুন
-
 
 async def send_code(token, phone_encrypted, website_config, device_name, phone_plain=None):
     async with await device_manager.build_session(device_name) as session:
@@ -3953,7 +3831,7 @@ def main():
         
         # ✅ NEW: Stop monitoring command
         app.add_handler(CommandHandler("stopmonitor", stop_monitoring_command))
-        app.add_handler(CommandHandler("forcestart", force_restart_monitoring))
+
         # Message & callback handlers
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         app.add_handler(CallbackQueryHandler(handle_callback_query))
