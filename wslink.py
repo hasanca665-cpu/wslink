@@ -481,8 +481,6 @@ def get_random_priority():
     return random.choice(priorities)
 
 
-# Auto monitoring system
-# ✅ COMPLETELY NEW AUTO MONITORING SYSTEM - 100% WORKING
 class AutoNumberMonitor:
     def __init__(self, application):
         self.application = application
@@ -494,17 +492,17 @@ class AutoNumberMonitor:
         self.token_to_user_map = {}
         
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
-        """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন (Improved: stops conflicting tasks cleanly)"""
+        """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন"""
         user_id_str = str(user_id)
 
-        # ১) যদি একই user_id-তে আগে থেকে টাস্ক চলছে, পরিষ্কারভাবে cancel করে wait কর
+        # যদি একই user_id-তে আগে থেকে টাস্ক চলছে, পরিষ্কারভাবে cancel করে wait কর
         if user_id_str in self.user_tasks:
             try:
                 await self.stop_monitoring(user_id)
             except Exception as e:
                 logger.error(f"Error stopping existing task for user {user_id}: {e}")
 
-        # ২) একই device_name বা একই user_id জন্য অন্য ওয়েবসাইটের মনিটরিং থাকলে বন্ধ করে দাও
+        # একই device_name বা একই user_id জন্য অন্য ওয়েবসাইটের মনিটরিং থাকলে বন্ধ করে দাও
         for uid, data in list(self.user_data.items()):
             try:
                 if uid != user_id_str:
@@ -544,50 +542,27 @@ class AutoNumberMonitor:
         logger.info(f"🚀 STARTED auto monitoring for user {user_id} on {website}")
 
     async def stop_monitoring(self, user_id: int):
-    """ইউজারের মনিটরিং ১০০% বন্ধ করুন - IMPROVED VERSION"""
-    user_id_str = str(user_id)
-    
-    logger.info(f"🛑 Attempting to stop monitoring for user {user_id}")
-    
-    # ১) টাস্ক ক্যানসেল করুন
-    if user_id_str in self.user_tasks:
-        try:
+        """ইউজারের মনিটরিং বন্ধ করুন"""
+        user_id_str = str(user_id)
+        if user_id_str in self.user_tasks:
             self.user_tasks[user_id_str].cancel()
-            logger.info(f"✅ Task cancelled for user {user_id}")
-        except Exception as e:
-            logger.error(f"❌ Error cancelling task for user {user_id}: {e}")
-    
-    # ২) ক্লিনআপ - সব রেফারেন্স রিমুভ করুন
-    cleanup_items = [
-        ('user_data', self.user_data),
-        ('processed_numbers', self.processed_numbers),
-        ('user_prev_online', self.user_prev_online),
-        ('user_tasks', self.user_tasks)
-    ]
-    
-    for dict_name, dictionary in cleanup_items:
-        if user_id_str in dictionary:
-            try:
-                # টোকেন ম্যাপিং ক্লিনআপ
-                if dict_name == 'user_data' and user_id_str in self.user_data:
-                    token_key = self.user_data[user_id_str].get('token_key')
-                    if token_key and token_key in self.token_to_user_map:
-                        del self.token_to_user_map[token_key]
+            
+            # ক্লিনআপ
+            if user_id_str in self.user_data:
+                token_key = self.user_data[user_id_str].get('token_key')
+                if token_key in self.token_to_user_map:
+                    del self.token_to_user_map[token_key]
+                del self.user_data[user_id_str]
                 
-                del dictionary[user_id_str]
-                logger.info(f"✅ Removed from {dict_name} for user {user_id}")
-            except Exception as e:
-                logger.error(f"❌ Error removing from {dict_name} for user {user_id}: {e}")
-    
-    # ৩) ফোর্স garbage collection
-    try:
-        import gc
-        gc.collect()
-        logger.info(f"✅ Force garbage collection for user {user_id}")
-    except:
-        pass
-    
-    logger.info(f"✅ COMPLETELY stopped monitoring for user {user_id}")
+            if user_id_str in self.processed_numbers:
+                del self.processed_numbers[user_id_str]
+            if user_id_str in self.user_prev_online:
+                del self.user_prev_online[user_id_str]
+                
+            del self.user_tasks[user_id_str]
+            logger.info(f"🛑 STOPPED auto monitoring for user {user_id}")
+            
+    # ... বাকি মেথডগুলো একই থাকবে (_monitor_loop, _fetch_phone_list, ইত্যাদি)
             
     async def _monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
         """মেইন মনিটরিং লুপ — এখন last_check আপডেট করে, পুনরুদ্ধারযোগ্য স্টেট সেভ করে এবং সিফটটি ক্লিনলি হ্যান্ডেল করে"""
@@ -1573,7 +1548,7 @@ async def stop_monitoring_command(update: Update, context: ContextTypes.DEFAULT_
         )
         return
     
-    # ✅ FIXED: শুধুমাত্র বর্তমান ইউজারের মনিটরিং বন্ধ করুন
+    # শুধুমাত্র বর্তমান ইউজারের মনিটরিং বন্ধ করুন
     if auto_monitor.is_user_monitoring(user_id):
         try:
             await auto_monitor.stop_monitoring(user_id)
