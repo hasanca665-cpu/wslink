@@ -1221,17 +1221,14 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
 
     keyboard = [
-        [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # side by side
-        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],
-        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)] # another row
+        [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # 1st row
+        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],      # 2nd row
+        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)]  # 3rd row: side by side
     ]
 
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("Admin Panel")])
-
-    # Only keep Set User Agent in a new row
-    keyboard.append([KeyboardButton(set_user_agent_text)])
+        keyboard.append([KeyboardButton("Admin Panel")])  # 4th row (only for admin)
 
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
