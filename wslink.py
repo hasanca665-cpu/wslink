@@ -399,7 +399,7 @@ ANDROID_UAS = [
 # Website configurations
 WEBSITE_CONFIGS = {
     "TASK 1": {
-        "name": "DIY",
+        "name": "TASK 1",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
@@ -410,7 +410,7 @@ WEBSITE_CONFIGS = {
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },"TASK 2": {
-        "name": "SMS",
+        "name": "TASK 2",
         "api_domain": "https://sms323.club/",
         "origin": "https://sms323.com",
         "referer": "https://sms323.com/",
@@ -421,7 +421,7 @@ WEBSITE_CONFIGS = {
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },"TASK 3": {
-        "name": "OK",
+        "name": "TASK 3",
         "api_domain": "https://ok8job.cc/",
         "origin": "https://www.ok8job.net",
         "referer": "https://www.ok8job.net/",
@@ -432,7 +432,7 @@ WEBSITE_CONFIGS = {
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },"TASK 4": {
-        "name": "TG",
+        "name": "TASK 4",
         "api_domain": "https://tg377.club/",
         "origin": "https://tg377.vip",
         "referer": "https://tg377.vip/",
@@ -444,19 +444,19 @@ WEBSITE_CONFIGS = {
         "referral_field": "invite_code"
     },
     "TASK 5": {
-        "name": "TG",
-        "api_domain": "https://tg377.club/",
-        "origin": "https://tg377.vip",
-        "referer": "https://tg377.vip/",
+        "name": "TASK 5",
+        "api_domain": "https://sms323.club/",
+        "origin": "https://sms323.com",
+        "referer": "https://sms323.com/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
-        "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
+        "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
     "TASK 6": {
-        "name": "DIY",
+        "name": "TASK 6",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
