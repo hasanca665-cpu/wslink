@@ -542,27 +542,52 @@ class AutoNumberMonitor:
             self._monitor_loop(user_id, website, token, device_name)
         )
         logger.info(f"🚀 STARTED auto monitoring for user {user_id} on {website}")
-        
+
+    # সেফটি: নতুন মনিটর চালুর আগে আগের সব task বন্ধ কর
+        await self.stop_monitoring(user_id)
     async def stop_monitoring(self, user_id: int):
-        """ইউজারের মনিটরিং বন্ধ করুন"""
+        """🔥 মনিটরিং ১০০% বন্ধ করার সিস্টেম (auto + manual safe)"""
         user_id_str = str(user_id)
-        if user_id_str in self.user_tasks:
-            self.user_tasks[user_id_str].cancel()
-            
-            # ক্লিনআপ
-            if user_id_str in self.user_data:
-                token_key = self.user_data[user_id_str].get('token_key')
-                if token_key in self.token_to_user_map:
-                    del self.token_to_user_map[token_key]
-                del self.user_data[user_id_str]
-                
-            if user_id_str in self.processed_numbers:
-                del self.processed_numbers[user_id_str]
-            if user_id_str in self.user_prev_online:
-                del self.user_prev_online[user_id_str]
-                
-            del self.user_tasks[user_id_str]
-            logger.info(f"🛑 STOPPED auto monitoring for user {user_id}")
+
+        logger.info(f"🛑 Force-stopping monitoring for user {user_id}...")
+
+        # ১️⃣ চলমান টাস্ক cancel + wait নিশ্চিতভাবে
+        task = self.user_tasks.get(user_id_str)
+        if task:
+            try:
+                task.cancel()
+                done, pending = await asyncio.wait({task}, timeout=5)
+                for t in pending:
+                    t.cancel()
+                logger.info(f"✅ Async task cancelled for user {user_id}")
+            except Exception as e:
+                logger.error(f"⚠️ Task cancel error for user {user_id}: {e}")
+            finally:
+                self.user_tasks.pop(user_id_str, None)
+
+        # ২️⃣ Token map থেকে সরাও
+        for key, uid in list(self.token_to_user_map.items()):
+            if uid == user_id:
+                self.token_to_user_map.pop(key, None)
+
+        # ৩️⃣ Data clean up (user_data, prev_online, processed_numbers)
+        self.user_data.pop(user_id_str, None)
+        self.user_prev_online.pop(user_id_str, None)
+        self.processed_numbers.pop(user_id_str, None)
+
+        # ৪️⃣ নিশ্চিত কর যে কোন async loop চালু নেই
+        await asyncio.sleep(0.1)
+        active_tasks = [t for t in asyncio.all_tasks() if not t.done()]
+        for t in active_tasks:
+            try:
+                # যেকোনো lingering task যা ওই user_id reference রাখে সেটাও cancel
+                if str(user_id) in str(t.get_coro()):
+                    t.cancel()
+                    logger.info(f"🔪 Force killed stray task linked to user {user_id}")
+            except Exception:
+                continue
+
+        logger.info(f"🧹 All monitoring data cleared for user {user_id}")
             
     async def _monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
         """মেইন মনিটরিং লুপ — এখন last_check আপডেট করে, পুনরুদ্ধারযোগ্য স্টেট সেভ করে এবং সিফটটি ক্লিনলি হ্যান্ডেল করে"""
