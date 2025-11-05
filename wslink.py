@@ -1216,12 +1216,14 @@ def detect_platform_from_user_agent(user_agent):
 
 def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     link_text = f"Link {selected_website} WhatsApp"
+    number_list_text = f"{selected_website} Number List"
     device_set = device_manager.exists(str(user_id))
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
 
     keyboard = [
         [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # side by side
-        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")]       # another row
+        [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],
+        [KeyboardButton(number_list_text), KeyboardButton(set_set_user_agent_text)] # another row
     ]
 
     # Add admin button if user is admin
