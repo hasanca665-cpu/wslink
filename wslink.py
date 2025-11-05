@@ -2615,7 +2615,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ Auto monitoring check (যদি না চলতে থাকে)
+    # ✅ AUTO MONITORING RESTART - FIXED VERSION
     tokens = load_tokens()
     if str(user_id) in tokens:
         for website in WEBSITE_CONFIGS:
@@ -2624,14 +2624,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 device_name = str(user_id)
                 if device_manager.exists(device_name) and token:
                     global auto_monitor
-                    if auto_monitor and not auto_monitor.is_user_monitoring(user_id):
-                        try:
-                            await auto_monitor.start_monitoring(user_id, website, token, device_name)
-                            logger.info(f"✅ Auto monitoring restarted for user {user_id} on {website}")
-                        except Exception as e:
-                            logger.error(f"❌ Failed to restart auto monitoring: {str(e)}")
+                    if auto_monitor:
+                        # ✅ FIXED: শুধুমাত্র যদি মনিটরিং না চলতে থাকে
+                        if not auto_monitor.is_user_monitoring(user_id):
+                            try:
+                                await auto_monitor.start_monitoring(user_id, website, token, device_name)
+                                logger.info(f"✅ Auto monitoring RESTARTED for user {user_id} on {website} via /start")
+                            except Exception as e:
+                                logger.error(f"❌ Failed to restart auto monitoring: {str(e)}")
+                        else:
+                            logger.info(f"🔄 Auto monitoring already running for user {user_id} on {website}")
     
-    if str(user_id) in tokens and any(tokens[str(user_id)].get(website, {}).get('main') for website in WEBSITE_CONFIGS):
+    # ✅ Check if user has any accounts
+    has_accounts = False
+    if str(user_id) in tokens:
+        for website in WEBSITE_CONFIGS:
+            if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
+                has_accounts = True
+                break
+    
+    if has_accounts:
         message = f"✅ You have accounts setup!\n\n{welcome_message}\n\n🤖 Auto monitoring: ACTIVE"
         logger.info(f"User {user_id} menu refreshed (logged in)")
     else:
