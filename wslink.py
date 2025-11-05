@@ -397,10 +397,9 @@ ANDROID_UAS = [
 ]
 
 # Website configurations
-# Website configurations - ALL TASKS ADDED
 WEBSITE_CONFIGS = {
     "TASK 1": {
-        "name": "TASK 1",
+        "name": "DIY",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
@@ -410,9 +409,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 2": {
-        "name": "TASK 2", 
+    },"TASK 2": {
+        "name": "SMS",
         "api_domain": "https://sms323.club/",
         "origin": "https://sms323.com",
         "referer": "https://sms323.com/",
@@ -422,9 +420,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 3": {
-        "name": "TASK 3",
+    },"TASK 3": {
+        "name": "OK",
         "api_domain": "https://ok8job.cc/",
         "origin": "https://www.ok8job.net",
         "referer": "https://www.ok8job.net/",
@@ -434,9 +431,8 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://ok8job.cc/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 4": {
-        "name": "TASK 4",
+    },"TASK 4": {
+        "name": "TG",
         "api_domain": "https://tg377.club/",
         "origin": "https://tg377.vip",
         "referer": "https://tg377.vip/",
@@ -459,39 +455,6 @@ SEC_CH_UA_LIST = [
 ]
 SEC_CH_UA_MOBILE = "?1"
 DEFAULT_SELECTED_WEBSITE = "Main"
-
-# Dynamic task management functions
-def get_all_task_names():
-    """সব টাস্কের নাম লিস্ট রিটার্ন করুন"""
-    return list(WEBSITE_CONFIGS.keys())
-
-def is_valid_task(task_name):
-    """টাস্কটি ভ্যালিড কিনা চেক করুন"""
-    return task_name in WEBSITE_CONFIGS
-
-def get_task_config(task_name):
-    """টাস্ক কনফিগ রিটার্ন করুন, না থাকলে TASK 3 রিটার্ন করুন"""
-    return WEBSITE_CONFIGS.get(task_name, WEBSITE_CONFIGS.get("TASK 3"))
-
-async def add_new_task(task_name, config_data):
-    """নতুন টাস্ক ডাইনামিকভাবে যোগ করুন"""
-    if task_name in WEBSITE_CONFIGS:
-        logger.warning(f"Task {task_name} already exists")
-        return False
-    
-    WEBSITE_CONFIGS[task_name] = config_data
-    logger.info(f"✅ New task added: {task_name}")
-    return True
-
-async def remove_task(task_name):
-    """টাস্ক রিমুভ করুন"""
-    if task_name in WEBSITE_CONFIGS and task_name not in ["TASK 1", "TASK 2", "TASK 3", "TASK 4"]:
-        del WEBSITE_CONFIGS[task_name]
-        logger.info(f"🗑️ Task removed: {task_name}")
-        return True
-    logger.warning(f"Cannot remove default task: {task_name}")
-    return False
-
 
 # Randomization for headers to reduce fingerprinting
 def get_random_accept_encoding():
@@ -630,71 +593,69 @@ class AutoNumberMonitor:
                     except:
                         pass
             logger.info(f"✅ Monitor loop exited for user {user_id}")
-
-async def _fetch_simple_phone_list(self, user_id: int, website: str, token: str, device_name: str):
-    """সরল ফোন লিস্ট ফেচিং - DYNAMIC TASK SUPPORT"""
-    user_id_str = str(user_id)
     
-    # ✅ DYNAMIC: কোন টাস্ক কনফিগ নেইলে TASK 3 ব্যবহার করুন
-    website_config = get_task_config(website)
-    
-    try:
-        async with await device_manager.build_session(device_name) as session:
-            headers = {
-                'Accept': 'application/json, text/plain, */*',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'token': token,
-                'Origin': website_config.get('origin', ''),
-                'Referer': website_config.get('referer', ''),
-                'X-Requested-With': 'mark.via.gp',
-                "accept-language": "en-US,en;q=0.9",
-                "sec-ch-ua": '"Not)A;Brand";v="99", "Chromium";v="113", "Google Chrome";v="113"',
-                "sec-ch-ua-mobile": "?1",
-                "sec-ch-ua-platform": '"Android"',
-                "sec-fetch-site": "cross-site",
-                "sec-fetch-mode": "cors",
-                "sec-fetch-dest": "empty",
-                "priority": "u=1, i"
-            }
+    async def _fetch_simple_phone_list(self, user_id: int, website: str, token: str, device_name: str):
+        """সরল ফোন লিস্ট ফেচিং"""
+        user_id_str = str(user_id)
+        website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
+        
+        try:
+            async with await device_manager.build_session(device_name) as session:
+                headers = {
+                    'Accept': 'application/json, text/plain, */*',
+                    'Accept-Encoding': 'gzip, deflate, br',
+                    'token': token,
+                    'Origin': website_config.get('origin', ''),
+                    'Referer': website_config.get('referer', ''),
+                    'X-Requested-With': 'mark.via.gp',
+                    "accept-language": "en-US,en;q=0.9",
+                    "sec-ch-ua": '"Not)A;Brand";v="99", "Chromium";v="113", "Google Chrome";v="113"',
+                    "sec-ch-ua-mobile": "?1",
+                    "sec-ch-ua-platform": '"Android"',
+                    "sec-fetch-site": "cross-site",
+                    "sec-fetch-mode": "cors",
+                    "sec-fetch-dest": "empty",
+                    "priority": "u=1, i"
+                }
 
-            async with asyncio.timeout(REQUEST_TIMEOUT):
-                async with session.post(website_config['phone_list_url'], headers=headers) as response:
-                    if response.status != 200:
-                        logger.error(f"Phone list API returned status {response.status} for user {user_id} on {website}")
-                        return None
+                async with asyncio.timeout(REQUEST_TIMEOUT):
+                    async with session.post(website_config['phone_list_url'], headers=headers) as response:
+                        if response.status != 200:
+                            logger.error(f"Phone list API returned status {response.status} for user {user_id}")
+                            return None
 
-                    data = await response.json()
-                    if data.get("code") != 1:
-                        logger.error(f"Phone list API error for user {user_id} on {website}: {data.get('msg', 'Unknown error')}")
-                        return None
+                        data = await response.json()
+                        if data.get("code") != 1:
+                            logger.error(f"Phone list API error for user {user_id}: {data.get('msg', 'Unknown error')}")
+                            return None
 
-                    phones = data.get("data", []) or []
-                    online_numbers = set()
-                    
-                    for phone_data in phones:
-                        phone_raw = str(phone_data.get("phone", ""))
-                        status = int(phone_data.get("status", 0))
+                        phones = data.get("data", []) or []
+                        online_numbers = set()
                         
-                        if status == 1 and len(phone_raw) >= 10:
-                            # নাম্বার নরমালাইজ করুন
-                            if phone_raw.startswith('1') and len(phone_raw) == 11:
-                                phone = "+" + phone_raw
-                            elif len(phone_raw) == 10:
-                                phone = "+1" + phone_raw
-                            else:
-                                phone = "+" + phone_raw
+                        for phone_data in phones:
+                            phone_raw = str(phone_data.get("phone", ""))
+                            status = int(phone_data.get("status", 0))
                             
-                            online_numbers.add(phone)
+                            if status == 1 and len(phone_raw) >= 10:
+                                # নাম্বার নরমালাইজ করুন
+                                if phone_raw.startswith('1') and len(phone_raw) == 11:
+                                    phone = "+" + phone_raw
+                                elif len(phone_raw) == 10:
+                                    phone = "+1" + phone_raw
+                                else:
+                                    phone = "+" + phone_raw
+                                
+                                online_numbers.add(phone)
 
-                    logger.info(f"📱 Fetched {len(online_numbers)} online numbers for user {user_id} on {website}")
-                    return online_numbers
+                        logger.info(f"📱 Fetched {len(online_numbers)} online numbers for user {user_id}")
+                        return online_numbers
 
-    except asyncio.TimeoutError:
-        logger.error(f"Phone list timeout for user {user_id} on {website}")
-        return None
-    except Exception as e:
-        logger.error(f"Error fetching phone list for user {user_id} on {website}: {str(e)}")
-        return None
+        except asyncio.TimeoutError:
+            logger.error(f"Phone list timeout for user {user_id}")
+            return None
+        except Exception as e:
+            logger.error(f"Error fetching phone list for user {user_id}: {str(e)}")
+            return None
     
     async def _process_simple_numbers(self, user_id: int, website: str, online_numbers: set):
         """সরল নাম্বার প্রসেসিং"""
@@ -2371,63 +2332,6 @@ async def today_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE
     
     await update.message.reply_text(message, parse_mode='Markdown')
 
-async def task_management_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """টাস্ক ম্যানেজমেন্ট এডমিন কমান্ড"""
-    user_id = update.message.from_user.id
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
-    
-    if user_id != balance_manager.balance_config["admin_id"]:
-        await update.message.reply_text("❌ শুধুমাত্র এডমিন এই কমান্ড ব্যবহার করতে পারবেন।")
-        return
-    
-    if not context.args:
-        # সব টাস্কের লিস্ট দেখান
-        all_tasks = get_all_task_names()
-        message = "📋 **সকল টাস্ক লিস্ট:**\n\n"
-        
-        for i, task in enumerate(all_tasks, 1):
-            message += f"{i}. {task}\n"
-        
-        message += f"\nমোট টাস্ক: {len(all_tasks)}টি\n\n"
-        message += "ব্যবহার:\n"
-        message += "• /tasks - সব টাস্ক দেখুন\n"
-        message += "• /addtask <name> <api_domain> - নতুন টাস্ক যোগ করুন\n"
-        message += "• /deltask <name> - টাস্ক ডিলিট করুন\n"
-        
-        await update.message.reply_text(message, parse_mode='Markdown')
-        return
-    
-    if context.args[0] == "add" and len(context.args) >= 3:
-        task_name = context.args[1]
-        api_domain = context.args[2]
-        
-        new_config = {
-            "name": task_name,
-            "api_domain": api_domain,
-            "origin": api_domain.replace("https://", "https://"),
-            "referer": api_domain,
-            "login_path": "api/user/signIn", 
-            "send_code_path": "api/ws_phone/sendCode",
-            "get_code_path": "api/ws_phone/getCode",
-            "phone_list_url": f"{api_domain}api/ws_phone/phoneList",
-            "signup_path": "api/user/signUp",
-            "referral_field": "invite_code"
-        }
-        
-        success = await add_new_task(task_name, new_config)
-        if success:
-            await update.message.reply_text(f"✅ নতুন টাস্ক যোগ করা হয়েছে: {task_name}")
-        else:
-            await update.message.reply_text(f"❌ টাস্ক যোগ করতে সমস্যা হয়েছে")
-    
-    elif context.args[0] == "del" and len(context.args) >= 2:
-        task_name = context.args[1]
-        success = await remove_task(task_name)
-        if success:
-            await update.message.reply_text(f"✅ টাস্ক ডিলিট করা হয়েছে: {task_name}")
-        else:
-            await update.message.reply_text(f"❌ টাস্ক ডিলিট করতে সমস্যা হয়েছে")
-
 async def pending_withdrawals_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
@@ -3928,11 +3832,6 @@ def main():
         # ✅ NEW: Stop monitoring command
         app.add_handler(CommandHandler("stopmonitor", stop_monitoring_command))
 
-        # ✅ Task management commands
-        app.add_handler(CommandHandler("tasks", task_management_command))
-        app.add_handler(CommandHandler("addtask", task_management_command))
-        app.add_handler(CommandHandler("deltask", task_management_command))
-
         # Message & callback handlers
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         app.add_handler(CallbackQueryHandler(handle_callback_query))
@@ -3943,8 +3842,6 @@ def main():
         logger.info("🤖 Bot is starting with MONITOR STATUS and STOP MONITOR commands...")
         print("✅ Bot started successfully!")
         print("🔧 New commands: /monitorstatus, /stopmonitor added")
-
-    
         
     
         
