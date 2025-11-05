@@ -2203,7 +2203,7 @@ async def get_phone_list(token, account_type, website_config, device_name, user_
         try:
             today_score = await get_today_income_score(token, website_config, device_name)
             if today_score and today_score != "N/A":
-                today_income_info = f"💰 Today Income Score: {today_score}\n"
+                today_income_info = f"💰 Income Score: {today_score}\n"
                 logger.info(f"Today income score for user {user_id}: {today_score}")
         except Exception as e:
             logger.error(f"Error fetching today income score in phone list: {str(e)}")
