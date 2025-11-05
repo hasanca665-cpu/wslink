@@ -446,6 +446,18 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp", 
         "referral_field": "invite_code"
+    },
+    "TASK 5": {
+        "name": "TASK 5",
+        "api_domain": "https://diy22.club/",
+        "origin": "https://diy22.net",
+        "referer": "https://diy22.net/",
+        "login_path": "api/user/signIn",
+        "send_code_path": "api/ws_phone/sendCode", 
+        "get_code_path": "api/ws_phone/getCode",
+        "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
+        "signup_path": "api/user/signUp",
+        "referral_field": "invite_code"
     }
 }
 
