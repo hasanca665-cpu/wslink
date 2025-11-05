@@ -496,16 +496,21 @@ class AutoNumberMonitor:
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
         """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন"""
         user_id_str = str(user_id)
-        
-        # যদি আগে থেকে চলতে থাকে, বন্ধ করুন
+
+        # আগের কোনো মনিটরিং থাকলে বন্ধ কর
         if user_id_str in self.user_tasks:
             await self.stop_monitoring(user_id)
-        
-        # টোকেন ম্যাপিং স্টোর করুন
+
+        # একই ইউজারের অন্য টাস্কগুলোও বন্ধ কর (যদি একই ডিভাইসের মধ্যে চলে)
+        for uid, data in list(self.user_data.items()):
+            if data.get('device_name') == device_name and data.get('website') != website:
+                await self.stop_monitoring(int(uid))
+
+        # টোকেন ম্যাপিং সংরক্ষণ
         token_key = f"{website}_{token[:20]}"
         self.token_to_user_map[token_key] = user_id
-        
-        # ইউজার ডেটা স্টোর করুন
+
+        # নতুন ইউজার ডেটা সেট কর
         self.user_data[user_id_str] = {
             'website': website,
             'token': token,
@@ -513,8 +518,8 @@ class AutoNumberMonitor:
             'last_check': None,
             'token_key': token_key
         }
-        
-        # মনিটরিং টাস্ক শুরু করুন
+
+        # মনিটরিং টাস্ক শুরু কর
         self.user_tasks[user_id_str] = asyncio.create_task(
             self._monitor_loop(user_id, website, token, device_name)
         )
@@ -635,24 +640,27 @@ class AutoNumberMonitor:
     async def _process_new_online_numbers(self, user_id: int, website: str, new_online_numbers: set):
         """নতুন অনলাইন নাম্বারগুলো প্রসেস করুন"""
         user_id_str = str(user_id)
-        
+
         for phone in new_online_numbers:
-            # চেক করুন যে এই নাম্বারটি এই সেশনে আগে প্রসেস করা হয়েছে কিনা
+            # আগে থেকে রেস্ট্রিক্টেড কিনা চেক কর
+            if not number_tracker.can_submit_number(phone, user_id, website):
+                logger.info(f"⏳ Number {phone} already restricted for user {user_id} ({website})")
+                continue
+
             processing_key = f"{website}_{phone}"
-            
             if processing_key not in self.processed_numbers[user_id_str]:
                 # ✅ BALANCE ADD করুন
                 result = balance_manager.add_online_number(user_id, website, phone)
-                
-                # ✅ RESTRICTION এড করুন
+
+                # ✅ RESTRICT NUMBER ২৪ ঘণ্টার জন্য
                 number_tracker.record_number_submission(phone, user_id, website)
-                
+
                 # ✅ PROCESSED মার্ক করুন
                 self.processed_numbers[user_id_str].add(processing_key)
-                
+
                 logger.info(f"💰 Balance added for user {user_id}: +{result['balance_added']} BDT for {phone}")
-                
-                # ✅ NOTIFICATION পাঠান
+
+                # ✅ নোটিফিকেশন পাঠান
                 await self._send_notification(user_id, website, phone, result)
     
     async def _send_notification(self, user_id: int, website: str, phone: str, result: dict):
