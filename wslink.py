@@ -494,23 +494,35 @@ class AutoNumberMonitor:
         self.token_to_user_map = {}
         
     async def start_monitoring(self, user_id: int, website: str, token: str, device_name: str):
-        """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন"""
+        """ইউজারের জন্য অটোমেটিক মনিটরিং শুরু করুন (Improved: stops conflicting tasks cleanly)"""
         user_id_str = str(user_id)
 
-        # আগের কোনো মনিটরিং থাকলে বন্ধ কর
+        # ১) যদি একই user_id-তে আগে থেকে টাস্ক চলছে, পরিষ্কারভাবে cancel করে wait কর
         if user_id_str in self.user_tasks:
-            await self.stop_monitoring(user_id)
+            try:
+                await self.stop_monitoring(user_id)
+            except Exception as e:
+                logger.error(f"Error stopping existing task for user {user_id}: {e}")
 
-        # একই ইউজারের অন্য টাস্কগুলোও বন্ধ কর (যদি একই ডিভাইসের মধ্যে চলে)
+        # ২) একই device_name বা একই user_id জন্য অন্য ওয়েবসাইটের মনিটরিং থাকলে বন্ধ করে দাও
         for uid, data in list(self.user_data.items()):
-            if data.get('device_name') == device_name and data.get('website') != website:
-                await self.stop_monitoring(int(uid))
+            try:
+                if uid != user_id_str:
+                    # যদি একই device_name ব্যবহার করে অন্য ইউজার/টাস্ক চালানো থাকে, বন্ধ কর
+                    if data.get('device_name') == device_name or data.get('website') != website and data.get('device_name') == device_name:
+                        try:
+                            await self.stop_monitoring(int(uid))
+                        except Exception:
+                            # best-effort: log and continue
+                            logger.debug(f"Could not stop monitoring for uid {uid}")
+            except Exception:
+                continue
 
-        # টোকেন ম্যাপিং সংরক্ষণ
+        # টোকেন ম্যাপিং সেট কর
         token_key = f"{website}_{token[:20]}"
         self.token_to_user_map[token_key] = user_id
 
-        # নতুন ইউজার ডেটা সেট কর
+        # ইউজার ডেটা সেট
         self.user_data[user_id_str] = {
             'website': website,
             'token': token,
@@ -519,7 +531,13 @@ class AutoNumberMonitor:
             'token_key': token_key
         }
 
-        # মনিটরিং টাস্ক শুরু কর
+        # ensure processed_numbers and prev_online exist
+        if user_id_str not in self.processed_numbers:
+            self.processed_numbers[user_id_str] = set()
+        if user_id_str not in self.user_prev_online:
+            self.user_prev_online[user_id_str] = set()
+
+        # নতুন মনিটরিং টাস্ক শুরু
         self.user_tasks[user_id_str] = asyncio.create_task(
             self._monitor_loop(user_id, website, token, device_name)
         )
@@ -547,89 +565,126 @@ class AutoNumberMonitor:
             logger.info(f"🛑 STOPPED auto monitoring for user {user_id}")
             
     async def _monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
-        """মেইন মনিটরিং লুপ - SIMPLE & EFFECTIVE"""
+        """মেইন মনিটরিং লুপ — এখন last_check আপডেট করে, পুনরুদ্ধারযোগ্য স্টেট সেভ করে এবং সিফটটি ক্লিনলি হ্যান্ডেল করে"""
         user_id_str = str(user_id)
-        website_config = WEBSITE_CONFIGS[website]
-        
+        website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
+
         logger.info(f"🔄 Monitoring loop started for user {user_id} on {website}")
-        
-        while True:
+
+        MONITOR_STATE_FILE = "monitor_state.json"
+
+        # Helper: save in-memory monitor state to disk (best-effort)
+        def _persist_state():
             try:
-                # ৩০ সেকেন্ড অপেক্ষা করুন
-                await asyncio.sleep(30)
-                
-                # ✅ Get current phone list from API
-                current_online_numbers = await self._fetch_phone_list(user_id, website, token, device_name)
-                if current_online_numbers is None:
-                    continue  # API error, skip this cycle
-                
-                # ✅ Find NEW online numbers
-                previous_online = self.user_prev_online.get(user_id_str, set())
-                new_online = current_online_numbers - previous_online
-                
-                # ✅ Process NEW online numbers
-                if new_online:
-                    logger.info(f"🎉 FOUND {len(new_online)} new online numbers for user {user_id}: {new_online}")
-                    await self._process_new_online_numbers(user_id, website, new_online)
-                
-                # ✅ Update previous online list
-                self.user_prev_online[user_id_str] = current_online_numbers
-                
-            except asyncio.CancelledError:
-                logger.info(f"Monitoring cancelled for user {user_id}")
-                break
+                state = {
+                    "user_prev_online": {k: list(v) for k, v in self.user_prev_online.items()},
+                    "processed_numbers": {k: list(v) for k, v in self.processed_numbers.items()},
+                    "user_data": self.user_data
+                }
+                tmp = MONITOR_STATE_FILE + ".tmp"
+                with open(tmp, "w", encoding="utf-8") as f:
+                    json.dump(state, f, indent=2, ensure_ascii=False)
+                os.replace(tmp, MONITOR_STATE_FILE)
             except Exception as e:
-                logger.error(f"❌ Error in monitoring loop for user {user_id}: {str(e)}")
-                await asyncio.sleep(60)  # Error হলে ১ মিনিট অপেক্ষা
+                logger.debug(f"Could not persist monitor state: {e}")
+
+        try:
+            while True:
+                try:
+                    await asyncio.sleep(30)
+
+                    # fetch current online numbers
+                    current_online_numbers = await self._fetch_phone_list(user_id, website, token, device_name)
+                    if current_online_numbers is None:
+                        # API error; continue but don't clobber previous_online
+                        logger.debug(f"No phone data for user {user_id} this cycle.")
+                        continue
+
+                    # update last_check timestamp
+                    try:
+                        self.user_data[user_id_str]['last_check'] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    except Exception:
+                        pass
+
+                    previous_online = self.user_prev_online.get(user_id_str, set())
+                    new_online = current_online_numbers - previous_online
+
+                    # process newly-online numbers
+                    if new_online:
+                        logger.info(f"🎉 FOUND {len(new_online)} new online numbers for user {user_id}: {new_online}")
+                        await self._process_new_online_numbers(user_id, website, new_online)
+
+                    # update previous_online and persist
+                    self.user_prev_online[user_id_str] = current_online_numbers
+                    _persist_state()
+
+                except asyncio.CancelledError:
+                    logger.info(f"Monitoring cancelled for user {user_id}")
+                    break
+                except Exception as e:
+                    logger.error(f"❌ Error in monitoring loop for user {user_id}: {str(e)}")
+                    # transient error wait a bit then continue
+                    await asyncio.sleep(10)
+        finally:
+            # ensure cleanup when loop ends
+            try:
+                if user_id_str in self.user_tasks:
+                    del self.user_tasks[user_id_str]
+            except Exception:
+                pass
+            logger.info(f"Monitoring loop exited for user {user_id}")
     
     async def _fetch_phone_list(self, user_id: int, website: str, token: str, device_name: str):
-        """API থেকে বর্তমান ফোন লিস্ট fetch করুন"""
-        website_config = WEBSITE_CONFIGS[website]
-        
+        """API থেকে বর্তমান ফোন লিস্ট fetch করুন — আরো রোবাস্ট হ্যান্ডলিং সহ"""
+        website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
+        user_id_str = str(user_id)
+
         try:
             async with await device_manager.build_session(device_name) as session:
                 headers = {
                     'Accept': 'application/json, text/plain, */*',
                     'Accept-Encoding': 'gzip, deflate, br',
                     'token': token,
-                    'Origin': website_config['origin'],
-                    'Referer': website_config['referer'],
+                    'Origin': website_config.get('origin', ''),
+                    'Referer': website_config.get('referer', ''),
                     'X-Requested-With': 'mark.via.gp',
                     "accept-language": "en-US,en;q=0.9",
                     "sec-ch-ua": '"Not)A;Brand";v="99", "Chromium";v="113", "Google Chrome";v="113"',
                     "sec-ch-ua-mobile": "?1",
                     "sec-ch-ua-platform": '"Android"',
                     "sec-fetch-site": "cross-site",
-                    "sec-fetch-mode": "cors", 
+                    "sec-fetch-mode": "cors",
                     "sec-fetch-dest": "empty",
                     "priority": "u=1, i"
                 }
-                
+
                 async with asyncio.timeout(REQUEST_TIMEOUT):
                     async with session.post(website_config['phone_list_url'], headers=headers) as response:
                         if response.status != 200:
                             logger.error(f"Phone list API returned status {response.status} for user {user_id}")
                             return None
-                            
+
                         data = await response.json()
-                        
                         if data.get("code") != 1:
                             logger.error(f"Phone list API error for user {user_id}: {data.get('msg', 'Unknown error')}")
                             return None
-                        
+
                         phones = data.get("data", []) or []
                         current_online = set()
-                        
                         for phone_data in phones:
-                            phone = "+1" + str(phone_data.get("phone", ""))[-10:]
-                            status = phone_data.get("status", 0)
-                            
-                            if status == 1:  # Online
+                            phone_raw = str(phone_data.get("phone", ""))
+                            # Normalize to +1XXXXXXXXXX for North America; otherwise keep country prefix if present
+                            if len(phone_raw) >= 10:
+                                phone = "+1" + phone_raw[-10:]
+                            else:
+                                phone = "+" + phone_raw
+                            status = int(phone_data.get("status", 0))
+                            if status == 1:
                                 current_online.add(phone)
-                        
+
                         logger.info(f"📱 API fetched: {len(current_online)} online numbers for user {user_id}")
                         return current_online
-                        
+
         except asyncio.TimeoutError:
             logger.error(f"Phone list API timeout for user {user_id}")
             return None
@@ -638,66 +693,95 @@ class AutoNumberMonitor:
             return None
     
     async def _process_new_online_numbers(self, user_id: int, website: str, new_online_numbers: set):
-        """নতুন অনলাইন নাম্বারগুলো প্রসেস করুন"""
+        """নতুন অনলাইন নাম্বারগুলো প্রসেস করুন — ডুপ্লিকেট এবং রেস্ট্রিকশন চেক সহ"""
         user_id_str = str(user_id)
 
+        # ensure containers exist
+        if user_id_str not in self.processed_numbers:
+            self.processed_numbers[user_id_str] = set()
+        if user_id_str not in self.user_prev_online:
+            self.user_prev_online[user_id_str] = set()
+
         for phone in new_online_numbers:
-            # আগে থেকে রেস্ট্রিক্টেড কিনা চেক কর
-            if not number_tracker.can_submit_number(phone, user_id, website):
-                logger.info(f"⏳ Number {phone} already restricted for user {user_id} ({website})")
-                continue
+            try:
+                # প্রথমে চেক কর নাম্বারটাতে রিস্ট্রিকশন আছে কি না (task-wise)
+                if not number_tracker.can_submit_number(phone, user_id, website):
+                    logger.info(f"⏳ Number {phone} already restricted for user {user_id} ({website}) - skipping")
+                    continue
 
-            processing_key = f"{website}_{phone}"
-            if processing_key not in self.processed_numbers[user_id_str]:
-                # ✅ BALANCE ADD করুন
-                result = balance_manager.add_online_number(user_id, website, phone)
+                processing_key = f"{website}_{phone}"
+                if processing_key in self.processed_numbers[user_id_str]:
+                    logger.debug(f"Processing key {processing_key} already handled for user {user_id}")
+                    continue
 
-                # ✅ RESTRICT NUMBER ২৪ ঘণ্টার জন্য
-                number_tracker.record_number_submission(phone, user_id, website)
+                # BALANCE ADD
+                try:
+                    result = balance_manager.add_online_number(user_id, website, phone)
+                except Exception as e:
+                    logger.error(f"Failed to add balance for {phone} user {user_id}: {e}")
+                    continue
 
-                # ✅ PROCESSED মার্ক করুন
+                # RESTRICT / RECORD
+                try:
+                    number_tracker.record_number_submission(phone, user_id, website)
+                except Exception as e:
+                    logger.error(f"Failed to record number submission for {phone}: {e}")
+
+                # MARK PROCESSED (in-memory)
                 self.processed_numbers[user_id_str].add(processing_key)
 
-                logger.info(f"💰 Balance added for user {user_id}: +{result['balance_added']} BDT for {phone}")
+                logger.info(f"💰 Balance added for user {user_id}: +{result.get('balance_added')} for {phone}")
 
-                # ✅ নোটিফিকেশন পাঠান
-                await self._send_notification(user_id, website, phone, result)
+                # SEND NOTIFICATION (fire-and-forget but await to capture failures)
+                try:
+                    await self._send_notification(user_id, website, phone, result)
+                except Exception as e:
+                    logger.error(f"Notification failed for {user_id}, {phone}: {e}")
+
+            except Exception as e:
+                logger.error(f"Error processing phone {phone} for user {user_id}: {e}")
     
     async def _send_notification(self, user_id: int, website: str, phone: str, result: dict):
-        """ইউজারকে নোটিফিকেশন পাঠান"""
-        try:
-            user_stats = balance_manager.get_user_stats(user_id)
-            if user_stats:
-                notification_msg = (
-                    f"🎉 **নতুন নাম্বার অনলাইন!**\n\n"
-                    f"📱 নাম্বার: `{phone}`\n"
-                    f"💰 যোগ হয়েছে: {result['balance_added']} BDT\n"
-                    f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
-                    f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
-                    f"🌐 Task: {website}\n\n"
-                    f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে!\n"
-                    f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
-                )
-                
+        """ইউজারকে নোটিফিকেশন পাঠাও — ৩ বার retry সহ"""
+        max_retries = 3
+        backoff = 1
+
+        for attempt in range(1, max_retries + 1):
+            try:
+                user_stats = balance_manager.get_user_stats(user_id)
+                if user_stats:
+                    notification_msg = (
+                        f"🎉 **নতুন নাম্বার অনলাইন!**\n\n"
+                        f"📱 নাম্বার: `{phone}`\n"
+                        f"💰 যোগ হয়েছে: {result.get('balance_added', 0)} BDT\n"
+                        f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
+                        f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
+                        f"🌐 Task: {website}\n\n"
+                        f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে।\n"
+                        f"⏰ এই নাম্বারটি এখন লগআউট করে দিন!"
+                    )
+                else:
+                    notification_msg = f"🎉 নতুন নাম্বার অনলাইন: {phone} (Task: {website})"
+
                 await self.application.bot.send_message(
                     user_id,
                     notification_msg,
                     parse_mode='Markdown'
                 )
                 logger.info(f"📨 Notification sent to user {user_id} for {phone}")
-                
-        except Exception as e:
-            logger.error(f"❌ Failed to send notification to user {user_id}: {str(e)}")
-            # Retry once
-            try:
-                await asyncio.sleep(2)
-                await self.application.bot.send_message(
-                    user_id,
-                    f"🎉 নতুন নাম্বার অনলাইন: {phone} (Task: {website})",
-                    parse_mode='Markdown'
-                )
-            except Exception as retry_e:
-                logger.error(f"❌ Retry notification also failed: {str(retry_e)}")
+                break
+            except Exception as e:
+                logger.error(f"❌ Failed to send notification to user {user_id} (attempt {attempt}): {e}")
+                if attempt < max_retries:
+                    await asyncio.sleep(backoff)
+                    backoff *= 2
+                else:
+                    # final fallback: try a very short non-markdown message
+                    try:
+                        await self.application.bot.send_message(user_id, f"নতুন নাম্বার অনলাইন: {phone} (Task: {website})")
+                        logger.info(f"📨 Fallback notification sent to user {user_id} for {phone}")
+                    except Exception as final_e:
+                        logger.error(f"❌ Final fallback notification also failed: {final_e}")
     
     def is_user_monitoring(self, user_id: int):
         return str(user_id) in self.user_tasks
@@ -738,8 +822,10 @@ class NumberTracking:
     
     def save_data(self):
         try:
-            with open(NUMBER_TRACKING_FILE, 'w', encoding='utf-8') as f:
+            tmp = NUMBER_TRACKING_FILE + ".tmp"
+            with open(tmp, 'w', encoding='utf-8') as f:
                 json.dump(self.tracking_data, f, indent=4, ensure_ascii=False)
+            os.replace(tmp, NUMBER_TRACKING_FILE)
         except Exception as e:
             logger.error(f"Error saving number tracking data: {str(e)}")
     
@@ -771,17 +857,21 @@ class NumberTracking:
         return False
     
     def record_number_submission(self, phone_number: str, user_id: int, website: str):
-        """নাম্বার successfulভাবে online হলে টাস্ক-ওয়াইজ রেকর্ড রাখুন"""
+        """নাম্বার successfulভাবে online হলে টাস্ক-ওয়াইজ রেকর্ড রাখো (synchronous + atomic save)"""
         user_id_str = str(user_id)
-        
+
         if user_id_str not in self.tracking_data:
             self.tracking_data[user_id_str] = {}
-        
-        # ✅ FIXED: টাস্ক-ওয়াইজ ট্র্যাকিং কী
+
         tracking_key = f"{website}_{phone_number}"
         self.tracking_data[user_id_str][tracking_key] = time.time()
-        self.save_data()
-        logger.info(f"Number {phone_number} restricted for user {user_id_str} on {website} for 24 hours")
+
+        # Save immediately (atomic)
+        try:
+            self.save_data()
+            logger.info(f"Number {phone_number} restricted for user {user_id_str} on {website} for 24 hours")
+        except Exception as e:
+            logger.error(f"Failed to save tracking after recording {phone_number}: {e}")
     
     def get_remaining_time(self, phone_number: str, user_id: int, website: str) -> int:
         """কত সময় বাকি আছে তা রিটার্ন করুন (সেকেন্ডে) - টাস্ক-ওয়াইজ"""
