@@ -1506,17 +1506,27 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ FIXED: শুধুমাত্র সিলেক্টেড ওয়েবসাইটের জন্য মনিটরিং রিস্টার্ট করুন
+    # ✅ FIXED: ডিবাগ ইনফো যোগ করুন
     tokens = load_tokens()
+    user_tokens = tokens.get(str(user_id), {})
+    
+    logger.info(f"🔍 User {user_id} tokens: {list(user_tokens.keys())}")
+    logger.info(f"🔍 Selected website: {selected_website}")
+    
     if str(user_id) in tokens and selected_website in tokens[str(user_id)]:
         token = tokens[str(user_id)][selected_website].get('main')
         device_name = str(user_id)
+        device_exists = device_manager.exists(device_name)
         
-        if device_manager.exists(device_name) and token:
+        logger.info(f"🔍 Token exists: {bool(token)}, Device exists: {device_exists}")
+        
+        if device_exists and token:
             global auto_monitor
             if auto_monitor:
                 # শুধুমাত্র যদি মনিটরিং না চলতে থাকে অথবা ভিন্ন ওয়েবসাইটে চলতে থাকে
                 current_status = auto_monitor.get_monitoring_status(user_id)
+                logger.info(f"🔍 Current monitoring status: {current_status}")
+                
                 if not current_status or current_status['website'] != selected_website:
                     try:
                         # পুরানো মনিটরিং বন্ধ করুন
@@ -1534,21 +1544,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     # Check if user has any accounts
     has_accounts = False
+    account_list = []
     if str(user_id) in tokens:
         for website in WEBSITE_CONFIGS:
             if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
                 has_accounts = True
-                break
+                account_list.append(website)
+    
+    logger.info(f"🔍 User {user_id} has accounts: {account_list}")
     
     if has_accounts:
-        # ✅ FIXED: শুধুমাত্র বর্তমান সিলেক্টেড ওয়েবসাইটের স্ট্যাটাস দেখান
+        # ✅ FIXED: মনিটরিং স্ট্যাটাস সঠিকভাবে দেখান
         current_status = auto_monitor.get_monitoring_status(user_id) if auto_monitor else None
+        
         if current_status and current_status['is_running']:
             monitoring_info = f"\n🤖 Auto monitoring: ACTIVE ({current_status['website']})"
+        elif current_status and not current_status['is_running']:
+            monitoring_info = f"\n🤖 Auto monitoring: INACTIVE (Token: {bool(current_status['token_exists'])}, Device: {current_status['device_exists']})"
         else:
-            monitoring_info = "\n🤖 Auto monitoring: INACTIVE"
+            monitoring_info = "\n🤖 Auto monitoring: NOT CONFIGURED"
         
-        message = f"✅ You have accounts setup!\n\n{welcome_message}{monitoring_info}"
+        accounts_info = f"\n📋 Logged in tasks: {', '.join(account_list)}"
+        
+        message = f"✅ You have accounts setup!{accounts_info}\n\n{welcome_message}{monitoring_info}"
         logger.info(f"User {user_id} menu refreshed (logged in)")
     else:
         message = welcome_message
