@@ -397,36 +397,33 @@ ANDROID_UAS = [
 ]
 
 # Website configurations
-# Website configurations - FIXED VERSION
 WEBSITE_CONFIGS = {
     "TASK 1": {
-        "name": "TASK 1",
+        "name": "DIY",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
         "login_path": "api/user/signIn",
-        "send_code_path": "api/ws_phone/sendCode", 
+        "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 2": {
-        "name": "TASK 2", 
+    },"TASK 2": {
+        "name": "SMS",
         "api_domain": "https://sms323.club/",
         "origin": "https://sms323.com",
         "referer": "https://sms323.com/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
-        "get_code_path": "api/ws_phone/getCode", 
+        "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 3": {
-        "name": "TASK 3",
+    },"TASK 3": {
+        "name": "OK",
         "api_domain": "https://ok8job.cc/",
-        "origin": "https://www.ok8job.net", 
+        "origin": "https://www.ok8job.net",
         "referer": "https://www.ok8job.net/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
@@ -434,26 +431,37 @@ WEBSITE_CONFIGS = {
         "phone_list_url": "https://ok8job.cc/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
-    },
-    "TASK 4": {
-        "name": "TASK 4",
-        "api_domain": "https://tg377.club/", 
+    },"TASK 4": {
+        "name": "TG",
+        "api_domain": "https://tg377.club/",
         "origin": "https://tg377.vip",
         "referer": "https://tg377.vip/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
-        "signup_path": "api/user/signUp", 
+        "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
     "TASK 5": {
-        "name": "TASK 5",
+        "name": "TG",
+        "api_domain": "https://tg377.club/",
+        "origin": "https://tg377.vip",
+        "referer": "https://tg377.vip/",
+        "login_path": "api/user/signIn",
+        "send_code_path": "api/ws_phone/sendCode",
+        "get_code_path": "api/ws_phone/getCode",
+        "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
+        "signup_path": "api/user/signUp",
+        "referral_field": "invite_code"
+    },
+    "TASK 6": {
+        "name": "DIY",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
         "login_path": "api/user/signIn",
-        "send_code_path": "api/ws_phone/sendCode", 
+        "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
@@ -500,7 +508,6 @@ def get_random_priority():
 class AutoNumberMonitor:
     def __init__(self, application):
         self.application = application
-        
         self.user_tasks = {}  # user_id -> task
         self.user_data = {}   # user_id -> monitoring data
         self.lock = asyncio.Lock()
@@ -745,10 +752,7 @@ class AutoNumberMonitor:
         """চেক করুন ইউজার মনিটরিং করছে কিনা"""
         user_id_str = str(user_id)
         return user_id_str in self.user_tasks and user_id_str in self.user_data and self.user_data[user_id_str].get('is_active', False)
-
-
     
-        
     def get_monitoring_status(self, user_id: int):
         """মনিটরিং স্ট্যাটাস রিটার্ন করুন"""
         user_id_str = str(user_id)
@@ -1445,16 +1449,8 @@ async def save_token(user_id, account_type, token, website):
             await f.write(json.dumps(tokens, indent=4))
         logger.info(f"Token saved for user {user_id} ({account_type} account, {website})")
         
-        # ✅ NEW: টোকেন সেভ করার সময়ও মনিটরিং শুরু করার চেষ্টা করুন
-        device_name = str(user_id)
-        global auto_monitor
-        if (device_manager.exists(device_name) and token and auto_monitor and 
-            not auto_monitor.is_user_monitoring(user_id)):
-            try:
-                await auto_monitor.start_monitoring(user_id, website, token, device_name)
-                logger.info(f"🔄 Auto monitoring started via save_token for {website}")
-            except Exception as e:
-                logger.error(f"Failed to start monitoring via save_token: {str(e)}")
+        # ✅ REMOVED: এখানে মনিটরিং শুরু করার লজিক থাকবে না
+        # মনিটরিং শুধুমাত্র লগইন সাকসেস বা /start কমান্ডে শুরু হবে
         
     except Exception as e:
         logger.error(f"Error saving token for user {user_id}: {str(e)}")
@@ -1534,123 +1530,59 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ SIMPLE: শুধুমাত্র বর্তমান মনিটরিং স্ট্যাটাস দেখান
-    global auto_monitor
-    monitoring_info = ""
-    
-    if auto_monitor:
-        current_status = auto_monitor.get_monitoring_status(user_id)
-        if current_status and current_status['is_running']:
-            monitoring_info = f"\n\n🤖 **Auto Monitoring:** ACTIVE on {current_status['website']} ✅"
-        else:
-            monitoring_info = f"\n\n🤖 Auto Monitoring: INACTIVE"
-    
-    # অ্যাকাউন্ট আছে কিনা চেক করুন
+    # ✅ FIXED: শুধুমাত্র সিলেক্টেড ওয়েবসাইটের জন্য মনিটরিং রিস্টার্ট করুন
     tokens = load_tokens()
-    has_accounts = str(user_id) in tokens and any(
-        website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main') 
-        for website in WEBSITE_CONFIGS
-    )
+    if str(user_id) in tokens and selected_website in tokens[str(user_id)]:
+        token = tokens[str(user_id)][selected_website].get('main')
+        device_name = str(user_id)
+        
+        if device_manager.exists(device_name) and token:
+            global auto_monitor
+            if auto_monitor:
+                # শুধুমাত্র যদি মনিটরিং না চলতে থাকে অথবা ভিন্ন ওয়েবসাইটে চলতে থাকে
+                current_status = auto_monitor.get_monitoring_status(user_id)
+                if not current_status or current_status['website'] != selected_website:
+                    try:
+                        # পুরানো মনিটরিং বন্ধ করুন
+                        if auto_monitor.is_user_monitoring(user_id):
+                            await auto_monitor.stop_monitoring(user_id)
+                            await asyncio.sleep(2)
+                        
+                        # নতুন মনিটরিং শুরু করুন
+                        await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
+                        logger.info(f"✅ Auto monitoring STARTED for user {user_id} on {selected_website} via /start")
+                    except Exception as e:
+                        logger.error(f"❌ Failed to start auto monitoring: {str(e)}")
+                else:
+                    logger.info(f"🔄 Auto monitoring already running for user {user_id} on {selected_website}")
+    
+    # Check if user has any accounts
+    has_accounts = False
+    if str(user_id) in tokens:
+        for website in WEBSITE_CONFIGS:
+            if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
+                has_accounts = True
+                break
     
     if has_accounts:
-        message = f"✅ You have accounts setup!{monitoring_info}"
+        # ✅ FIXED: শুধুমাত্র বর্তমান সিলেক্টেড ওয়েবসাইটের স্ট্যাটাস দেখান
+        current_status = auto_monitor.get_monitoring_status(user_id) if auto_monitor else None
+        if current_status and current_status['is_running']:
+            monitoring_info = f"\n🤖 Auto monitoring: ACTIVE ({current_status['website']})"
+        else:
+            monitoring_info = "\n🤖 Auto monitoring: INACTIVE"
+        
+        message = f"✅ You have accounts setup!\n\n{welcome_message}{monitoring_info}"
         logger.info(f"User {user_id} menu refreshed (logged in)")
     else:
-        message = welcome_message + monitoring_info
+        message = welcome_message
         logger.info(f"User {user_id} menu refreshed (not logged in)")
     
     await update.message.reply_text(
         message,
-        parse_mode='Markdown',
         reply_markup=get_main_keyboard(selected_website, user_id)
     )
-
-async def switch_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """মনিটরিং অন্য টাস্কে সুইচ করুন"""
-    user_id = update.message.from_user.id
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
-    
-    global auto_monitor
-    tokens = load_tokens()
-    
-    if not context.args:
-        # সব লগইন করা টাস্ক দেখান
-        available_tasks = []
-        if str(user_id) in tokens:
-            for website in WEBSITE_CONFIGS:
-                if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
-                    available_tasks.append(website)
         
-        if available_tasks:
-            tasks_text = "\n".join([f"• {task}" for task in available_tasks])
-            message = (
-                f"🔄 **মনিটরিং সুইচ করুন**\n\n"
-                f"📋 লগইন করা টাস্ক:\n{tasks_text}\n\n"
-                f"ব্যবহার: /switch TASK_NAME\n"
-                f"উদাহরণ: /switch TASK 1"
-            )
-        else:
-            message = "❌ কোনো টাস্কে লগইন নেই। প্রথমে লগইন করুন।"
-        
-        await update.message.reply_text(
-            message,
-            parse_mode='Markdown',
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    target_task = context.args[0].upper()
-    if target_task not in WEBSITE_CONFIGS:
-        await update.message.reply_text(
-            f"❌ '{target_task}' টাস্ক নেই। উপলব্ধ টাস্ক: {', '.join(WEBSITE_CONFIGS.keys())}",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    # চেক করুন টাস্কে লগইন আছে কিনা
-    if str(user_id) not in tokens or target_task not in tokens[str(user_id)] or not tokens[str(user_id)][target_task].get('main'):
-        await update.message.reply_text(
-            f"❌ {target_task} টাস্কে লগইন নেই। প্রথমে লগইন করুন।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    # মনিটরিং সুইচ করুন
-    token = tokens[str(user_id)][target_task]['main']
-    device_name = str(user_id)
-    
-    if not device_manager.exists(device_name):
-        await update.message.reply_text(
-            "❌ প্রথমে 'Set User Agent' দিয়ে ডিভাইস সেট করুন।",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        return
-    
-    try:
-        # বর্তমান মনিটরিং বন্ধ করুন
-        if auto_monitor and auto_monitor.is_user_monitoring(user_id):
-            await auto_monitor.stop_monitoring(user_id)
-            await asyncio.sleep(2)
-        
-        # নতুন টাস্কে মনিটরিং শুরু করুন
-        await auto_monitor.start_monitoring(user_id, target_task, token, device_name)
-        
-        await update.message.reply_text(
-            f"✅ **মনিটরিং সুইচ করা হয়েছে!**\n\n"
-            f"🔄 এখন মনিটরিং চলছে: {target_task}\n"
-            f"📱 স্বয়ংক্রিয় নাম্বার ডিটেকশন চালু",
-            parse_mode='Markdown',
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-        
-    except Exception as e:
-        logger.error(f"Error switching monitoring: {str(e)}")
-        await update.message.reply_text(
-            f"❌ মনিটরিং সুইচ করতে সমস্যা: {str(e)}",
-            reply_markup=get_main_keyboard(selected_website, user_id)
-        )
-
-
 async def login_with_credentials(username, password, website_config, device_name):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -1683,7 +1615,7 @@ async def login_with_credentials(username, password, website_config, device_name
                             if not token:
                                 token = response_data.get("data", {}).get("userinfo", {}).get("token")
                             if token:
-                                # ✅ FIXED: সব টাস্কের জন্য সঠিকভাবে মনিটরিং শুরু করুন
+                                # ✅ FIXED: শুধুমাত্র লগইন করা ওয়েবসাইটের জন্য মনিটরিং শুরু করুন
                                 user_id = None
                                 try:
                                     user_id = int(device_name)
@@ -1693,17 +1625,17 @@ async def login_with_credentials(username, password, website_config, device_name
                                 if user_id:
                                     global auto_monitor
                                     if auto_monitor:
-                                        # প্রথমে পুরানো মনিটরিং বন্ধ করুন (যদি থাকে)
-                                        if auto_monitor.is_user_monitoring(user_id):
-                                            current_status = auto_monitor.get_monitoring_status(user_id)
-                                            logger.info(f"Stopping current monitoring on {current_status['website']} for new login on {website_config['name']}")
+                                        # শুধুমাত্র যদি একই ইউজারের জন্য অন্য ওয়েবসাইটে মনিটরিং চলছে
+                                        current_status = auto_monitor.get_monitoring_status(user_id)
+                                        if current_status and current_status['website'] != website_config['name']:
+                                            # পুরানো মনিটরিং বন্ধ করুন
                                             await auto_monitor.stop_monitoring(user_id)
                                             await asyncio.sleep(2)
                                         
-                                        # নতুন লগইন করা টাস্কে মনিটরিং শুরু করুন
+                                        # নতুন মনিটরিং শুরু করুন
                                         website = website_config['name']
                                         await auto_monitor.start_monitoring(user_id, website, token, device_name)
-                                        logger.info(f"🔄 Auto monitoring STARTED for user {user_id} on {website} after login")
+                                        logger.info(f"🔄 Monitoring started for user {user_id} on {website} after login")
                                 
                                 return {
                                     "success": True,
@@ -1740,6 +1672,7 @@ async def login_with_credentials(username, password, website_config, device_name
                         "response": None
                     }
                 await asyncio.sleep(1)
+
 async def register_account(website_config, phone_number, password, confirm_password, invite_code, device_name, reg_host):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -2981,19 +2914,17 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
             account_type = 'main'
             await save_token(user_id, account_type, login_result["token"], website)
             
-            # ✅ FIXED: সব টাস্কের জন্য মনিটরিং কনফার্মেশন
+            # ✅ অটোমেটিক মনিটরিং শুরু করুন
             global auto_monitor
-            if auto_monitor and auto_monitor.is_user_monitoring(user_id):
-                current_status = auto_monitor.get_monitoring_status(user_id)
-                monitoring_msg = f"\n\n🤖 Auto monitoring: ACTIVE on {current_status['website']}"
-            else:
-                monitoring_msg = "\n\n🤖 Auto monitoring: Not started"
+            if auto_monitor and login_result["token"]:
+                await auto_monitor.start_monitoring(user_id, website, login_result["token"], device_name)
+                logger.info(f"✅ Auto monitoring started for user {user_id} after login")
             
             context.user_data.clear()
             context.user_data['selected_website'] = selected_website
             logger.info(f"User {user_id} login successful for {account_type} account on {website}")
             await update.message.reply_text(
-                f"✅ Account login successful for {website}!{monitoring_msg}\n\nAccount token: <code>{login_result['token']}...</code>",
+                f"✅ Account login successful for {website}!\nAccount token: <code>{login_result['token']}...</code>",
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(selected_website, user_id)
             )
@@ -3918,7 +3849,7 @@ def main():
         app.add_handler(CommandHandler("approve", approve_withdrawal_command))
         app.add_handler(CommandHandler("reject", reject_withdrawal_command))
         app.add_handler(CommandHandler("setincome", set_income_percentage_command))
-        app.add_handler(CommandHandler("switch", switch_monitoring))        
+        
         # ✅ NEW: Monitor status command
         app.add_handler(CommandHandler("monitorstatus", monitor_status))
         
