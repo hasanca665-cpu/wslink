@@ -1445,8 +1445,16 @@ async def save_token(user_id, account_type, token, website):
             await f.write(json.dumps(tokens, indent=4))
         logger.info(f"Token saved for user {user_id} ({account_type} account, {website})")
         
-        # ✅ REMOVED: এখানে মনিটরিং শুরু করার লজিক থাকবে না
-        # মনিটরিং শুধুমাত্র লগইন সাকসেস বা /start কমান্ডে শুরু হবে
+        # ✅ NEW: টোকেন সেভ করার সময়ও মনিটরিং শুরু করার চেষ্টা করুন
+        device_name = str(user_id)
+        global auto_monitor
+        if (device_manager.exists(device_name) and token and auto_monitor and 
+            not auto_monitor.is_user_monitoring(user_id)):
+            try:
+                await auto_monitor.start_monitoring(user_id, website, token, device_name)
+                logger.info(f"🔄 Auto monitoring started via save_token for {website}")
+            except Exception as e:
+                logger.error(f"Failed to start monitoring via save_token: {str(e)}")
         
     except Exception as e:
         logger.error(f"Error saving token for user {user_id}: {str(e)}")
@@ -1526,58 +1534,30 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
     
-    # ✅ FIXED: সিম্পল এবং কার্যকরী মনিটরিং সিস্টেম
-    tokens = load_tokens()
+    # ✅ SIMPLE: শুধুমাত্র বর্তমান মনিটরিং স্ট্যাটাস দেখান
     global auto_monitor
-    
-    has_accounts = False
     monitoring_info = ""
     
-    # প্রথমে চেক করুন কোন টাস্কে বর্তমানে মনিটরিং চলছে
-    current_monitoring = None
     if auto_monitor:
         current_status = auto_monitor.get_monitoring_status(user_id)
         if current_status and current_status['is_running']:
-            current_monitoring = current_status['website']
-            monitoring_info = f"\n\n🤖 **বর্তমান মনিটরিং:** {current_monitoring} ✅"
-    
-    # সব টাস্কের অ্যাকাউন্ট স্ট্যাটাস চেক করুন
-    account_status = []
-    if str(user_id) in tokens:
-        for website in WEBSITE_CONFIGS:
-            if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
-                has_accounts = True
-                token = tokens[str(user_id)][website]['main']
-                
-                if current_monitoring == website:
-                    account_status.append(f"✅ {website} - ACTIVE")
-                else:
-                    account_status.append(f"🔵 {website} - LOGGED IN")
-    
-    # যদি কোনো মনিটরিং না চলছে, তাহলে সিলেক্টেড ওয়েবসাইটে মনিটরিং শুরু করুন
-    if not current_monitoring and has_accounts:
-        if selected_website in tokens.get(str(user_id), {}):
-            token = tokens[str(user_id)][selected_website].get('main')
-            device_name = str(user_id)
-            
-            if device_manager.exists(device_name) and token and auto_monitor:
-                try:
-                    await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
-                    monitoring_info = f"\n\n🤖 **মনিটরিং শুরু হয়েছে:** {selected_website} ✅"
-                    logger.info(f"Auto monitoring started for {selected_website}")
-                except Exception as e:
-                    monitoring_info = f"\n\n🤖 মনিটরিং শুরু করতে সমস্যা: {str(e)}"
-                    logger.error(f"Failed to start monitoring: {str(e)}")
-    
-    # ফাইনাল মেসেজ তৈরি করুন
-    if has_accounts:
-        if account_status:
-            accounts_text = "\n".join(account_status)
-            message = f"✅ **আপনার অ্যাকাউন্টস:**\n{accounts_text}{monitoring_info}"
+            monitoring_info = f"\n\n🤖 **Auto Monitoring:** ACTIVE on {current_status['website']} ✅"
         else:
-            message = f"✅ You have accounts setup!{monitoring_info}"
+            monitoring_info = f"\n\n🤖 Auto Monitoring: INACTIVE"
+    
+    # অ্যাকাউন্ট আছে কিনা চেক করুন
+    tokens = load_tokens()
+    has_accounts = str(user_id) in tokens and any(
+        website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main') 
+        for website in WEBSITE_CONFIGS
+    )
+    
+    if has_accounts:
+        message = f"✅ You have accounts setup!{monitoring_info}"
+        logger.info(f"User {user_id} menu refreshed (logged in)")
     else:
-        message = welcome_message
+        message = welcome_message + monitoring_info
+        logger.info(f"User {user_id} menu refreshed (not logged in)")
     
     await update.message.reply_text(
         message,
@@ -1703,7 +1683,7 @@ async def login_with_credentials(username, password, website_config, device_name
                             if not token:
                                 token = response_data.get("data", {}).get("userinfo", {}).get("token")
                             if token:
-                                # ✅ FIXED: শুধুমাত্র লগইন করা ওয়েবসাইটের জন্য মনিটরিং শুরু করুন
+                                # ✅ FIXED: সব টাস্কের জন্য সঠিকভাবে মনিটরিং শুরু করুন
                                 user_id = None
                                 try:
                                     user_id = int(device_name)
@@ -1713,17 +1693,17 @@ async def login_with_credentials(username, password, website_config, device_name
                                 if user_id:
                                     global auto_monitor
                                     if auto_monitor:
-                                        # শুধুমাত্র যদি একই ইউজারের জন্য অন্য ওয়েবসাইটে মনিটরিং চলছে
-                                        current_status = auto_monitor.get_monitoring_status(user_id)
-                                        if current_status and current_status['website'] != website_config['name']:
-                                            # পুরানো মনিটরিং বন্ধ করুন
+                                        # প্রথমে পুরানো মনিটরিং বন্ধ করুন (যদি থাকে)
+                                        if auto_monitor.is_user_monitoring(user_id):
+                                            current_status = auto_monitor.get_monitoring_status(user_id)
+                                            logger.info(f"Stopping current monitoring on {current_status['website']} for new login on {website_config['name']}")
                                             await auto_monitor.stop_monitoring(user_id)
                                             await asyncio.sleep(2)
                                         
-                                        # নতুন মনিটরিং শুরু করুন
+                                        # নতুন লগইন করা টাস্কে মনিটরিং শুরু করুন
                                         website = website_config['name']
                                         await auto_monitor.start_monitoring(user_id, website, token, device_name)
-                                        logger.info(f"🔄 Monitoring started for user {user_id} on {website} after login")
+                                        logger.info(f"🔄 Auto monitoring STARTED for user {user_id} on {website} after login")
                                 
                                 return {
                                     "success": True,
@@ -1760,7 +1740,6 @@ async def login_with_credentials(username, password, website_config, device_name
                         "response": None
                     }
                 await asyncio.sleep(1)
-
 async def register_account(website_config, phone_number, password, confirm_password, invite_code, device_name, reg_host):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -3002,17 +2981,19 @@ async def handle_credentials(update: Update, context: ContextTypes.DEFAULT_TYPE)
             account_type = 'main'
             await save_token(user_id, account_type, login_result["token"], website)
             
-            # ✅ অটোমেটিক মনিটরিং শুরু করুন
+            # ✅ FIXED: সব টাস্কের জন্য মনিটরিং কনফার্মেশন
             global auto_monitor
-            if auto_monitor and login_result["token"]:
-                await auto_monitor.start_monitoring(user_id, website, login_result["token"], device_name)
-                logger.info(f"✅ Auto monitoring started for user {user_id} after login")
+            if auto_monitor and auto_monitor.is_user_monitoring(user_id):
+                current_status = auto_monitor.get_monitoring_status(user_id)
+                monitoring_msg = f"\n\n🤖 Auto monitoring: ACTIVE on {current_status['website']}"
+            else:
+                monitoring_msg = "\n\n🤖 Auto monitoring: Not started"
             
             context.user_data.clear()
             context.user_data['selected_website'] = selected_website
             logger.info(f"User {user_id} login successful for {account_type} account on {website}")
             await update.message.reply_text(
-                f"✅ Account login successful for {website}!\nAccount token: <code>{login_result['token']}...</code>",
+                f"✅ Account login successful for {website}!{monitoring_msg}\n\nAccount token: <code>{login_result['token']}...</code>",
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(selected_website, user_id)
             )
