@@ -1223,7 +1223,7 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     keyboard = [
         [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # side by side
         [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],
-        [KeyboardButton(number_list_text), KeyboardButton(set_set_user_agent_text)] # another row
+        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)] # another row
     ]
 
     # Add admin button if user is admin
