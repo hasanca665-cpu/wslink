@@ -397,35 +397,36 @@ ANDROID_UAS = [
 ]
 
 # Website configurations
+# Website configurations - FIXED VERSION
 WEBSITE_CONFIGS = {
     "TASK 1": {
-        "name": "DIY",
+        "name": "TASK 1",
         "api_domain": "https://diy22.club/",
         "origin": "https://diy22.net",
         "referer": "https://diy22.net/",
         "login_path": "api/user/signIn",
-        "send_code_path": "api/ws_phone/sendCode",
+        "send_code_path": "api/ws_phone/sendCode", 
         "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
     "TASK 2": {
-        "name": "SMS",
+        "name": "TASK 2", 
         "api_domain": "https://sms323.club/",
         "origin": "https://sms323.com",
         "referer": "https://sms323.com/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
-        "get_code_path": "api/ws_phone/getCode",
+        "get_code_path": "api/ws_phone/getCode", 
         "phone_list_url": "https://sms323.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
     "TASK 3": {
-        "name": "OK",
+        "name": "TASK 3",
         "api_domain": "https://ok8job.cc/",
-        "origin": "https://www.ok8job.net",
+        "origin": "https://www.ok8job.net", 
         "referer": "https://www.ok8job.net/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
@@ -435,28 +436,17 @@ WEBSITE_CONFIGS = {
         "referral_field": "invite_code"
     },
     "TASK 4": {
-        "name": "TG",
-        "api_domain": "https://tg377.club/",
+        "name": "TASK 4",
+        "api_domain": "https://tg377.club/", 
         "origin": "https://tg377.vip",
         "referer": "https://tg377.vip/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
         "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
-        "signup_path": "api/user/signUp",
+        "signup_path": "api/user/signUp", 
         "referral_field": "invite_code"
-    "TASK 5": {
-        "name": "DIY",
-        "api_domain": "https://diy22.club/",
-        "origin": "https://diy22.net",
-        "referer": "https://diy22.net/",
-        "login_path": "api/user/signIn",
-        "send_code_path": "api/ws_phone/sendCode",
-        "get_code_path": "api/ws_phone/getCode",
-        "phone_list_url": "https://diy22.club/api/ws_phone/phoneList",
-        "signup_path": "api/user/signUp",
-        "referral_field": "invite_code"
-    }     
+    }
 }
 
 # Fixed headers for consistency
@@ -1510,67 +1500,48 @@ def encrypt_username(plain_text: str) -> str:
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    logger.info(f"Start command triggered by user {user_id}")
-    
-    if 'selected_website' not in context.user_data:
-        context.user_data['selected_website'] = DEFAULT_SELECTED_WEBSITE
-    
-    selected_website = context.user_data['selected_website']
-    
-    welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
-    
-    # ✅ FIXED: শুধুমাত্র সিলেক্টেড ওয়েবসাইটের জন্য মনিটরিং রিস্টার্ট করুন
-    tokens = load_tokens()
-    if str(user_id) in tokens and selected_website in tokens[str(user_id)]:
-        token = tokens[str(user_id)][selected_website].get('main')
-        device_name = str(user_id)
-        
-        if device_manager.exists(device_name) and token:
-            global auto_monitor
-            if auto_monitor:
-                # শুধুমাত্র যদি মনিটরিং না চলতে থাকে অথবা ভিন্ন ওয়েবসাইটে চলতে থাকে
-                current_status = auto_monitor.get_monitoring_status(user_id)
-                if not current_status or current_status['website'] != selected_website:
-                    try:
-                        # পুরানো মনিটরিং বন্ধ করুন
-                        if auto_monitor.is_user_monitoring(user_id):
-                            await auto_monitor.stop_monitoring(user_id)
-                            await asyncio.sleep(2)
-                        
-                        # নতুন মনিটরিং শুরু করুন
-                        await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
-                        logger.info(f"✅ Auto monitoring STARTED for user {user_id} on {selected_website} via /start")
-                    except Exception as e:
-                        logger.error(f"❌ Failed to start auto monitoring: {str(e)}")
-                else:
-                    logger.info(f"🔄 Auto monitoring already running for user {user_id} on {selected_website}")
-    
-    # Check if user has any accounts
-    has_accounts = False
-    if str(user_id) in tokens:
-        for website in WEBSITE_CONFIGS:
-            if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
-                has_accounts = True
-                break
-    
-    if has_accounts:
-        # ✅ FIXED: শুধুমাত্র বর্তমান সিলেক্টেড ওয়েবসাইটের স্ট্যাটাস দেখান
-        current_status = auto_monitor.get_monitoring_status(user_id) if auto_monitor else None
-        if current_status and current_status['is_running']:
-            monitoring_info = f"\n🤖 Auto monitoring: ACTIVE ({current_status['website']})"
+    user_id = update.effective_user.id
+    username = update.effective_user.username
+    full_name = update.effective_user.full_name
+
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    website_config = WEBSITE_CONFIGS.get(selected_website)
+    if not website_config:
+        await update.message.reply_text("❌ Invalid website selection.")
+        return
+
+    # NEW FIX: TASK name → real name mapping (important)
+    selected_name = website_config.get("name", selected_website)
+
+    # Check current status
+    current_status = auto_monitor.get_status(user_id)
+
+    # FIXED condition — compare with selected_name instead of selected_website
+    if not current_status or current_status.get("website") != selected_name:
+        token_data = token_manager.get_token(user_id, selected_website)
+        if not token_data:
+            await update.message.reply_text("🔑 Please log in first using /login.")
+            return
+
+        token = token_data["token"]
+        device_name = token_data.get("device_name", "Unknown Device")
+
+        # Try to restart monitoring if stopped
+        started = await auto_monitor.start_monitoring(
+            user_id, selected_name, token, device_name
+        )
+        if started:
+            await update.message.reply_text(f"✅ Monitoring started for {selected_name}.")
         else:
-            monitoring_info = "\n🤖 Auto monitoring: INACTIVE"
-        
-        message = f"✅ You have accounts setup!\n\n{welcome_message}{monitoring_info}"
-        logger.info(f"User {user_id} menu refreshed (logged in)")
+            await update.message.reply_text(f"⚠️ Could not start monitoring for {selected_name}.")
     else:
-        message = welcome_message
-        logger.info(f"User {user_id} menu refreshed (not logged in)")
-    
+        await update.message.reply_text(f"🟢 Already active for {selected_name}.")
+
+    # Send main keyboard
+    keyboard = get_main_keyboard(selected_website, user_id)
     await update.message.reply_text(
-        message,
-        reply_markup=get_main_keyboard(selected_website, user_id)
+        f"👋 Hi {full_name or username}!\nYou are using {selected_name}.",
+        reply_markup=keyboard
     )
         
 async def login_with_credentials(username, password, website_config, device_name):
