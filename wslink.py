@@ -488,6 +488,7 @@ def get_random_priority():
 class AutoNumberMonitor:
     def __init__(self, application):
         self.application = application
+        self.active_monitors = {}
         self.user_tasks = {}  # user_id -> task
         self.user_data = {}   # user_id -> monitoring data
         self.lock = asyncio.Lock()
