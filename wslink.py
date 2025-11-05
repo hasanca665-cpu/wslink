@@ -1514,7 +1514,7 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
                     if match:
                         code = match.group(1)
                         area_map = {
-    "93": "93",     # Afghanistan
+                            "93": "93",     # Afghanistan
     "355": "355",   # Albania
     "213": "213",   # Algeria
     "376": "376",   # Andorra
@@ -1734,8 +1734,9 @@ async def send_code(token, phone_encrypted, website_config, device_name, phone_p
     "967": "967",   # Yemen
     "260": "260",   # Zambia
     "263": "263"    # Zimbabwe
-}
-area_code = area_map.get(code, "1")
+                        }
+                        area_code = area_map.get(code, "1")
+
 
                 url = f"{website_config['api_domain']}{website_config['send_code_path']}"
                 headers = {
