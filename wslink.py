@@ -543,27 +543,51 @@ class AutoNumberMonitor:
         )
         logger.info(f"🚀 STARTED auto monitoring for user {user_id} on {website}")
 
-    # সেফটি: নতুন মনিটর চালুর আগে আগের সব task বন্ধ কর
     async def stop_monitoring(self, user_id: int):
-        """ইউজারের মনিটরিং বন্ধ করুন"""
-        user_id_str = str(user_id)
-        if user_id_str in self.user_tasks:
+    """ইউজারের মনিটরিং ১০০% বন্ধ করুন - IMPROVED VERSION"""
+    user_id_str = str(user_id)
+    
+    logger.info(f"🛑 Attempting to stop monitoring for user {user_id}")
+    
+    # ১) টাস্ক ক্যানসেল করুন
+    if user_id_str in self.user_tasks:
+        try:
             self.user_tasks[user_id_str].cancel()
-            
-            # ক্লিনআপ
-            if user_id_str in self.user_data:
-                token_key = self.user_data[user_id_str].get('token_key')
-                if token_key in self.token_to_user_map:
-                    del self.token_to_user_map[token_key]
-                del self.user_data[user_id_str]
+            logger.info(f"✅ Task cancelled for user {user_id}")
+        except Exception as e:
+            logger.error(f"❌ Error cancelling task for user {user_id}: {e}")
+    
+    # ২) ক্লিনআপ - সব রেফারেন্স রিমুভ করুন
+    cleanup_items = [
+        ('user_data', self.user_data),
+        ('processed_numbers', self.processed_numbers),
+        ('user_prev_online', self.user_prev_online),
+        ('user_tasks', self.user_tasks)
+    ]
+    
+    for dict_name, dictionary in cleanup_items:
+        if user_id_str in dictionary:
+            try:
+                # টোকেন ম্যাপিং ক্লিনআপ
+                if dict_name == 'user_data' and user_id_str in self.user_data:
+                    token_key = self.user_data[user_id_str].get('token_key')
+                    if token_key and token_key in self.token_to_user_map:
+                        del self.token_to_user_map[token_key]
                 
-            if user_id_str in self.processed_numbers:
-                del self.processed_numbers[user_id_str]
-            if user_id_str in self.user_prev_online:
-                del self.user_prev_online[user_id_str]
-                
-            del self.user_tasks[user_id_str]
-            logger.info(f"🛑 STOPPED auto monitoring for user {user_id}")
+                del dictionary[user_id_str]
+                logger.info(f"✅ Removed from {dict_name} for user {user_id}")
+            except Exception as e:
+                logger.error(f"❌ Error removing from {dict_name} for user {user_id}: {e}")
+    
+    # ৩) ফোর্স garbage collection
+    try:
+        import gc
+        gc.collect()
+        logger.info(f"✅ Force garbage collection for user {user_id}")
+    except:
+        pass
+    
+    logger.info(f"✅ COMPLETELY stopped monitoring for user {user_id}")
             
     async def _monitor_loop(self, user_id: int, website: str, token: str, device_name: str):
         """মেইন মনিটরিং লুপ — এখন last_check আপডেট করে, পুনরুদ্ধারযোগ্য স্টেট সেভ করে এবং সিফটটি ক্লিনলি হ্যান্ডেল করে"""
@@ -1535,6 +1559,38 @@ def encrypt_username(plain_text: str) -> str:
     encrypted_bytes = cipher.encrypt(padded_text)
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
+async def stop_monitoring_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """ইউজার ম্যানুয়ালি মনিটরিং বন্ধ করার কমান্ড"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    global auto_monitor
+    
+    if not auto_monitor:
+        await update.message.reply_text(
+            "❌ মনিটরিং সিস্টেম এখনও শুরু হয়নি।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # ✅ FIXED: শুধুমাত্র বর্তমান ইউজারের মনিটরিং বন্ধ করুন
+    if auto_monitor.is_user_monitoring(user_id):
+        try:
+            await auto_monitor.stop_monitoring(user_id)
+            message = "🛑 **মনিটরিং বন্ধ করা হয়েছে!**\n\nআপনার অটোমেটিক নাম্বার ডিটেকশন বন্ধ করা হয়েছে।"
+            logger.info(f"User {user_id} manually stopped monitoring")
+        except Exception as e:
+            message = f"❌ মনিটরিং বন্ধ করতে সমস্যা হয়েছে: {str(e)}"
+            logger.error(f"Error stopping monitoring for user {user_id}: {str(e)}")
+    else:
+        message = "ℹ️ **কোনো একটিভ মনিটরিং নেই।**\n\nআপনার জন্য কোনো মনিটরিং চলছে না।"
+    
+    await update.message.reply_text(
+        message,
+        parse_mode='Markdown',
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
+        
 async def login_with_credentials(username, password, website_config, device_name):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -3776,8 +3832,8 @@ async def error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
 def main():
     global auto_monitor
     try:
+        import psutil, os
         # Stop any existing bot instances first
-        import psutil
         for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
             try:
                 if proc.info['cmdline'] and 'python' in proc.info['cmdline'] and 'wslink' in ' '.join(proc.info['cmdline']):
@@ -3792,7 +3848,9 @@ def main():
         auto_monitor = AutoNumberMonitor(app)
         logger.info("✅ Auto Number Monitor initialized")
 
-        # Add all handlers
+        # -------------------------
+        # Command Handlers
+        # -------------------------
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("login", login_command))
         app.add_handler(CommandHandler("link", link_command))
@@ -3821,15 +3879,21 @@ def main():
         # ✅ NEW: Monitor status command
         app.add_handler(CommandHandler("monitorstatus", monitor_status))
         
+        # ✅ NEW: Stop monitoring command
+        app.add_handler(CommandHandler("stopmonitor", stop_monitoring_command))
+
+        # Message & callback handlers
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
         app.add_handler(CallbackQueryHandler(handle_callback_query))
         
-        # Use the safe error handler
+        # Error handler
         app.add_error_handler(error_handler)
 
-        logger.info("🤖 Bot is starting with MONITOR STATUS command...")
+        logger.info("🤖 Bot is starting with MONITOR STATUS and STOP MONITOR commands...")
         print("✅ Bot started successfully!")
-        print("🔧 New: /monitorstatus command added")
+        print("🔧 New commands: /monitorstatus, /stopmonitor added")
+        
+    
         
         # ✅ IMPROVED polling with conflict resolution
         app.run_polling(
