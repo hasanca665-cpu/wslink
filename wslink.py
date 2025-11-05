@@ -500,7 +500,7 @@ def get_random_priority():
 class AutoNumberMonitor:
     def __init__(self, application):
         self.application = application
-        self.active_monitors = {}
+        
         self.user_tasks = {}  # user_id -> task
         self.user_data = {}   # user_id -> monitoring data
         self.lock = asyncio.Lock()
@@ -747,9 +747,7 @@ class AutoNumberMonitor:
         return user_id_str in self.user_tasks and user_id_str in self.user_data and self.user_data[user_id_str].get('is_active', False)
 
 
-    def get_status(self, user_id):
-        """Return monitoring status info for a user"""
-        return self.active_monitors.get(user_id)
+    
         
     def get_monitoring_status(self, user_id: int):
         """মনিটরিং স্ট্যাটাস রিটার্ন করুন"""
@@ -1518,50 +1516,161 @@ def encrypt_username(plain_text: str) -> str:
     return base64.b64encode(encrypted_bytes).decode('utf-8')
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    username = update.effective_user.username
-    full_name = update.effective_user.full_name
-
-    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
-    website_config = WEBSITE_CONFIGS.get(selected_website)
-    if not website_config:
-        await update.message.reply_text("❌ Invalid website selection.")
-        return
-
-    # NEW FIX: TASK name → real name mapping (important)
-    selected_name = website_config.get("name", selected_website)
-
-    # Check current status
-    current_status = auto_monitor.get_status(user_id)
-
-    # FIXED condition — compare with selected_name instead of selected_website
-    if not current_status or current_status.get("website") != selected_name:
-        token_data = token_manager.get_token(user_id, selected_website)
-        if not token_data:
-            await update.message.reply_text("🔑 Please log in first using /login.")
-            return
-
-        token = token_data["token"]
-        device_name = token_data.get("device_name", "Unknown Device")
-
-        # Try to restart monitoring if stopped
-        started = await auto_monitor.start_monitoring(
-            user_id, selected_name, token, device_name
-        )
-        if started:
-            await update.message.reply_text(f"✅ Monitoring started for {selected_name}.")
+    user_id = update.message.from_user.id
+    logger.info(f"Start command triggered by user {user_id}")
+    
+    if 'selected_website' not in context.user_data:
+        context.user_data['selected_website'] = DEFAULT_SELECTED_WEBSITE
+    
+    selected_website = context.user_data['selected_website']
+    
+    welcome_message = "👋 Welcome to the WhatsApp Linking Bot!\n\nThis System made by HASAN."
+    
+    # ✅ FIXED: সিম্পল এবং কার্যকরী মনিটরিং সিস্টেম
+    tokens = load_tokens()
+    global auto_monitor
+    
+    has_accounts = False
+    monitoring_info = ""
+    
+    # প্রথমে চেক করুন কোন টাস্কে বর্তমানে মনিটরিং চলছে
+    current_monitoring = None
+    if auto_monitor:
+        current_status = auto_monitor.get_monitoring_status(user_id)
+        if current_status and current_status['is_running']:
+            current_monitoring = current_status['website']
+            monitoring_info = f"\n\n🤖 **বর্তমান মনিটরিং:** {current_monitoring} ✅"
+    
+    # সব টাস্কের অ্যাকাউন্ট স্ট্যাটাস চেক করুন
+    account_status = []
+    if str(user_id) in tokens:
+        for website in WEBSITE_CONFIGS:
+            if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
+                has_accounts = True
+                token = tokens[str(user_id)][website]['main']
+                
+                if current_monitoring == website:
+                    account_status.append(f"✅ {website} - ACTIVE")
+                else:
+                    account_status.append(f"🔵 {website} - LOGGED IN")
+    
+    # যদি কোনো মনিটরিং না চলছে, তাহলে সিলেক্টেড ওয়েবসাইটে মনিটরিং শুরু করুন
+    if not current_monitoring and has_accounts:
+        if selected_website in tokens.get(str(user_id), {}):
+            token = tokens[str(user_id)][selected_website].get('main')
+            device_name = str(user_id)
+            
+            if device_manager.exists(device_name) and token and auto_monitor:
+                try:
+                    await auto_monitor.start_monitoring(user_id, selected_website, token, device_name)
+                    monitoring_info = f"\n\n🤖 **মনিটরিং শুরু হয়েছে:** {selected_website} ✅"
+                    logger.info(f"Auto monitoring started for {selected_website}")
+                except Exception as e:
+                    monitoring_info = f"\n\n🤖 মনিটরিং শুরু করতে সমস্যা: {str(e)}"
+                    logger.error(f"Failed to start monitoring: {str(e)}")
+    
+    # ফাইনাল মেসেজ তৈরি করুন
+    if has_accounts:
+        if account_status:
+            accounts_text = "\n".join(account_status)
+            message = f"✅ **আপনার অ্যাকাউন্টস:**\n{accounts_text}{monitoring_info}"
         else:
-            await update.message.reply_text(f"⚠️ Could not start monitoring for {selected_name}.")
+            message = f"✅ You have accounts setup!{monitoring_info}"
     else:
-        await update.message.reply_text(f"🟢 Already active for {selected_name}.")
-
-    # Send main keyboard
-    keyboard = get_main_keyboard(selected_website, user_id)
+        message = welcome_message
+    
     await update.message.reply_text(
-        f"👋 Hi {full_name or username}!\nYou are using {selected_name}.",
-        reply_markup=keyboard
+        message,
+        parse_mode='Markdown',
+        reply_markup=get_main_keyboard(selected_website, user_id)
     )
+
+async def switch_monitoring(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """মনিটরিং অন্য টাস্কে সুইচ করুন"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    global auto_monitor
+    tokens = load_tokens()
+    
+    if not context.args:
+        # সব লগইন করা টাস্ক দেখান
+        available_tasks = []
+        if str(user_id) in tokens:
+            for website in WEBSITE_CONFIGS:
+                if website in tokens[str(user_id)] and tokens[str(user_id)][website].get('main'):
+                    available_tasks.append(website)
         
+        if available_tasks:
+            tasks_text = "\n".join([f"• {task}" for task in available_tasks])
+            message = (
+                f"🔄 **মনিটরিং সুইচ করুন**\n\n"
+                f"📋 লগইন করা টাস্ক:\n{tasks_text}\n\n"
+                f"ব্যবহার: /switch TASK_NAME\n"
+                f"উদাহরণ: /switch TASK 1"
+            )
+        else:
+            message = "❌ কোনো টাস্কে লগইন নেই। প্রথমে লগইন করুন।"
+        
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    target_task = context.args[0].upper()
+    if target_task not in WEBSITE_CONFIGS:
+        await update.message.reply_text(
+            f"❌ '{target_task}' টাস্ক নেই। উপলব্ধ টাস্ক: {', '.join(WEBSITE_CONFIGS.keys())}",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # চেক করুন টাস্কে লগইন আছে কিনা
+    if str(user_id) not in tokens or target_task not in tokens[str(user_id)] or not tokens[str(user_id)][target_task].get('main'):
+        await update.message.reply_text(
+            f"❌ {target_task} টাস্কে লগইন নেই। প্রথমে লগইন করুন।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # মনিটরিং সুইচ করুন
+    token = tokens[str(user_id)][target_task]['main']
+    device_name = str(user_id)
+    
+    if not device_manager.exists(device_name):
+        await update.message.reply_text(
+            "❌ প্রথমে 'Set User Agent' দিয়ে ডিভাইস সেট করুন।",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    try:
+        # বর্তমান মনিটরিং বন্ধ করুন
+        if auto_monitor and auto_monitor.is_user_monitoring(user_id):
+            await auto_monitor.stop_monitoring(user_id)
+            await asyncio.sleep(2)
+        
+        # নতুন টাস্কে মনিটরিং শুরু করুন
+        await auto_monitor.start_monitoring(user_id, target_task, token, device_name)
+        
+        await update.message.reply_text(
+            f"✅ **মনিটরিং সুইচ করা হয়েছে!**\n\n"
+            f"🔄 এখন মনিটরিং চলছে: {target_task}\n"
+            f"📱 স্বয়ংক্রিয় নাম্বার ডিটেকশন চালু",
+            parse_mode='Markdown',
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        
+    except Exception as e:
+        logger.error(f"Error switching monitoring: {str(e)}")
+        await update.message.reply_text(
+            f"❌ মনিটরিং সুইচ করতে সমস্যা: {str(e)}",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+
+
 async def login_with_credentials(username, password, website_config, device_name):
     async with await device_manager.build_session(device_name) as session:
         for attempt in range(MAX_RETRIES):
@@ -3828,7 +3937,7 @@ def main():
         app.add_handler(CommandHandler("approve", approve_withdrawal_command))
         app.add_handler(CommandHandler("reject", reject_withdrawal_command))
         app.add_handler(CommandHandler("setincome", set_income_percentage_command))
-        
+        app.add_handler(CommandHandler("switch", switch_monitoring))        
         # ✅ NEW: Monitor status command
         app.add_handler(CommandHandler("monitorstatus", monitor_status))
         
