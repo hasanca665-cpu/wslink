@@ -1060,7 +1060,6 @@ class BalanceManager:
             k: v for k, v in self.withdrawal_requests.items() 
             if v.get("status") == "pending"
         }
-    
     def get_all_users_stats(self):
     """সকল ইউজারের সামারি স্ট্যাটস রিটার্ন করুন - FIXED VERSION"""
     with self.lock:
