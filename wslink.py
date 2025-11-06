@@ -365,7 +365,7 @@ async def select_random_proxy():
 # Constants
 KEY = b'djchdnfkxnjhgvuy'
 IV = b'ayghjuiklobghfrt'
-TELEGRAM_TOKEN = "7390288812:AAGsGZriy4dprHYmQoRUZltMCmvTUitpz4I"
+TELEGRAM_TOKEN = "8266441211:AAH7R19FNjzF42bjpoYaPKsK9MdgYRUGORU"
 ADMIN_ID = 5624278091
 TOKEN_FILE = "tokens.json"
 USER_STATUS_FILE = "user_status.json"
