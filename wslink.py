@@ -365,7 +365,7 @@ async def select_random_proxy():
 # Constants
 KEY = b'djchdnfkxnjhgvuy'
 IV = b'ayghjuiklobghfrt'
-TELEGRAM_TOKEN = "8266441211:AAH7R19FNjzF42bjpoYaPKsK9MdgYRUGORU"
+TELEGRAM_TOKEN = "7390288812:AAGsGZriy4dprHYmQoRUZltMCmvTUitpz4I"
 ADMIN_ID = 5624278091
 TOKEN_FILE = "tokens.json"
 USER_STATUS_FILE = "user_status.json"
@@ -680,46 +680,92 @@ class AutoNumberMonitor:
         except Exception as e:
             logger.error(f"Error fetching phone list for user {user_id}: {str(e)}")
             return None
+            
+            
+            
+async def _process_simple_numbers(self, user_id: int, website: str, online_numbers: set):
+    """সরল নাম্বার প্রসেসিং - COMPLETE MULTI-ACCOUNT সাপোর্ট"""
+    user_id_str = str(user_id)
     
-    async def _process_simple_numbers(self, user_id: int, website: str, online_numbers: set):
-        """সরল নাম্বার প্রসেসিং"""
-        user_id_str = str(user_id)
+    if user_id_str not in self.user_data:
+        return
+    
+    processed = self.user_data[user_id_str].get('processed_numbers', set())
+    new_numbers = online_numbers - processed
+    
+    if not new_numbers:
+        return
+    
+    logger.info(f"🎉 Found {len(new_numbers)} new online numbers for user {user_id}")
+    
+    for phone in new_numbers:
+        try:
+            # রেস্ট্রিকশন চেক করুন
+            if not number_tracker.can_submit_number(phone, user_id, website):
+                logger.info(f"⏳ Number {phone} restricted for user {user_id} - skipping")
+                continue
+            
+            # ✅ MULTI-ACCOUNT: পরবর্তী অ্যাকাউন্টে সুইচ করুন
+            next_token = multi_account_manager.get_next_account_token(website)
+            
+            if next_token:
+                # নতুন টোকেন সেভ করুন
+                await save_token(user_id, 'main', next_token, website)
+                
+                # মনিটরিং আপডেট করুন
+                self.user_data[user_id_str]['token'] = next_token
+                
+                current_info = multi_account_manager.get_current_account_info(website)
+                if current_info:
+                    logger.info(f"🔄 Auto-switched to account: {current_info['username']}")
+            
+            # ব্যালেন্স যোগ করুন
+            result = balance_manager.add_online_number(user_id, website, phone)
+            
+            # রেস্ট্রিকশন রেকর্ড করুন
+            number_tracker.record_number_submission(phone, user_id, website)
+            
+            # প্রসেসড লিস্টে যোগ করুন
+            processed.add(phone)
+            self.user_data[user_id_str]['processed_numbers'] = processed
+            
+            # নোটিফিকেশন পাঠান (অ্যাকাউন্ট ইনফো সহ)
+            await self._send_multi_account_notification(user_id, website, phone, result)
+            
+            logger.info(f"💰 Balance added for user {user_id}: +{result.get('balance_added')} for {phone}")
+            
+        except Exception as e:
+            logger.error(f"Error processing phone {phone} for user {user_id}: {e}")
+
+async def _send_multi_account_notification(self, user_id: int, website: str, phone: str, result: dict):
+    """মাল্টি-অ্যাকাউন্ট নোটিফিকেশন"""
+    try:
+        user_stats = balance_manager.get_user_stats(user_id)
+        current_account = multi_account_manager.get_current_account_info(website)
         
-        if user_id_str not in self.user_data:
-            return
+        if user_stats and current_account:
+            notification_msg = (
+                f"🎉 **নতুন নাম্বার অনলাইন!**\n\n"
+                f"📱 নাম্বার: `{phone}`\n"
+                f"💰 যোগ হয়েছে: {result.get('balance_added', 0)} BDT\n"
+                f"💵 মোট ব্যালেন্স: {user_stats['total_balance']} BDT\n"
+                f"📊 আজকের অনলাইন: {user_stats['today_count']} টি\n"
+                f"🌐 Task: {website}\n"
+                f"👤 অ্যাকাউন্ট: {current_account['username']} ({current_account['index'] + 1}/{current_account['total_accounts']})\n\n"
+                f"✅ স্বয়ংক্রিয়ভাবে ব্যালেন্স যোগ করা হয়েছে।"
+            )
+        else:
+            notification_msg = f"🎉 নতুন নাম্বার অনলাইন: {phone} (Task: {website})"
+
+        await self.application.bot.send_message(
+            user_id,
+            notification_msg,
+            parse_mode='Markdown'
+        )
+        logger.info(f"📨 Multi-account notification sent to user {user_id}")
         
-        processed = self.user_data[user_id_str].get('processed_numbers', set())
-        new_numbers = online_numbers - processed
-        
-        if not new_numbers:
-            return
-        
-        logger.info(f"🎉 Found {len(new_numbers)} new online numbers for user {user_id}")
-        
-        for phone in new_numbers:
-            try:
-                # রেস্ট্রিকশন চেক করুন
-                if not number_tracker.can_submit_number(phone, user_id, website):
-                    logger.info(f"⏳ Number {phone} restricted for user {user_id} - skipping")
-                    continue
-                
-                # ব্যালেন্স যোগ করুন
-                result = balance_manager.add_online_number(user_id, website, phone)
-                
-                # রেস্ট্রিকশন রেকর্ড করুন
-                number_tracker.record_number_submission(phone, user_id, website)
-                
-                # প্রসেসড লিস্টে যোগ করুন
-                processed.add(phone)
-                self.user_data[user_id_str]['processed_numbers'] = processed
-                
-                # নোটিফিকেশন পাঠান
-                await self._send_simple_notification(user_id, website, phone, result)
-                
-                logger.info(f"💰 Balance added for user {user_id}: +{result.get('balance_added')} for {phone}")
-                
-            except Exception as e:
-                logger.error(f"Error processing phone {phone} for user {user_id}: {e}")
+    except Exception as e:
+        logger.error(f"❌ Failed to send multi-account notification: {e}")
     
     async def _send_simple_notification(self, user_id: int, website: str, phone: str, result: dict):
         """সরল নোটিফিকেশন সিস্টেম"""
@@ -873,6 +919,9 @@ class NumberTracking:
         return max(0, int(remaining))
 
 number_tracker = NumberTracking()
+
+
+
 
 
 
@@ -1287,6 +1336,9 @@ MONTHLY_STATS_FILE = "monthly_stats.json"
 balance_manager = BalanceManager()
 
 
+
+
+
 # Custom logging filter to mask sensitive data
 class SensitiveDataFilter(logging.Filter):
     def filter(self, record):
@@ -1369,16 +1421,20 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     number_list_text = f"{selected_website} Number List"
     device_set = device_manager.exists(str(user_id))
     set_user_agent_text = f"{'✅ ' if device_set else ''}Set User Agent"
+    
+    # মাল্টি-অ্যাকাউন্ট বাটন যোগ করুন
+    multi_account_text = "🔢 Multi Accounts"
 
     keyboard = [
         [KeyboardButton("Log in Account"), KeyboardButton(link_text)],  # 1st row
         [KeyboardButton("My Balance"), KeyboardButton("Withdraw")],      # 2nd row
-        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)]  # 3rd row: side by side
+        [KeyboardButton(number_list_text), KeyboardButton(set_user_agent_text)],  # 3rd row
+        [KeyboardButton(multi_account_text)]  # 4th row: নতুন বাটন
     ]
 
     # Add admin button if user is admin
     if user_id == balance_manager.balance_config["admin_id"]:
-        keyboard.append([KeyboardButton("Admin Panel")])  # 4th row (only for admin)
+        keyboard.append([KeyboardButton("Admin Panel")])  # 5th row (only for admin)
 
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
@@ -1501,6 +1557,132 @@ async def reset_all(user_id):
     except Exception as e:
         logger.error(f"Error resetting all for user {user_id}: {str(e)}")
         return False, f"❌ Error resetting all: {str(e)}"
+
+class MultiAccountManager:
+    def __init__(self):
+        self.accounts_file = "multi_accounts.json"
+        self.accounts_data = {}
+        self.current_account_index = {}
+        self.active_tokens = {}  # website -> {username: token}
+        self.load_accounts()
+    
+    def load_accounts(self):
+        try:
+            if os.path.exists(self.accounts_file):
+                with open(self.accounts_file, 'r', encoding='utf-8') as f:
+                    self.accounts_data = json.load(f)
+                # লগার না থাকলে প্রিন্ট ব্যবহার করুন
+                print(f"✅ Multi-accounts loaded for websites: {list(self.accounts_data.keys())}")
+                for website, accounts in self.accounts_data.items():
+                    print(f"📊 {website}: {len(accounts)} accounts")
+            else:
+                print("ℹ️ No multi-accounts file found - creating empty file")
+                # খালি ফাইল তৈরি করুন
+                with open(self.accounts_file, 'w', encoding='utf-8') as f:
+                    json.dump({"TASK 3": []}, f, indent=2)
+        except Exception as e:
+            print(f"❌ Error loading multi-accounts: {str(e)}")
+            self.accounts_data = {}
+    
+    async def login_all_accounts(self, website: str, device_name: str):
+        """সকল অ্যাকাউন্ট একসাথে লগইন করুন"""
+        if website not in self.accounts_data:
+            return False
+        
+        website_config = WEBSITE_CONFIGS.get(website, WEBSITE_CONFIGS.get("TASK 3"))
+        success_count = 0
+        
+        print(f"🔄 Logging in ALL accounts for {website}...")
+        
+        for account in self.accounts_data[website]:
+            try:
+                username = account['username']
+                password = account['password']
+                
+                print(f"⏳ Logging in: {username}")
+                login_result = await login_with_credentials(username, password, website_config, device_name)
+                
+                if login_result["success"]:
+                    if website not in self.active_tokens:
+                        self.active_tokens[website] = {}
+                    self.active_tokens[website][username] = login_result["token"]
+                    success_count += 1
+                    print(f"✅ Login successful: {username}")
+                else:
+                    print(f"❌ Login failed: {username} - {login_result.get('error')}")
+                    
+            except Exception as e:
+                print(f"❌ Error logging in {account['username']}: {str(e)}")
+        
+        print(f"🎯 Login summary for {website}: {success_count}/{len(self.accounts_data[website])} successful")
+        return success_count > 0
+    
+    def get_next_account_token(self, website: str):
+        """পরবর্তী অ্যাকাউন্টের টোকেন রিটার্ন করুন"""
+        if website not in self.accounts_data or not self.accounts_data[website]:
+            return None
+        
+        if website not in self.current_account_index:
+            self.current_account_index[website] = 0
+        else:
+            self.current_account_index[website] = (self.current_account_index[website] + 1) % len(self.accounts_data[website])
+        
+        current_account = self.accounts_data[website][self.current_account_index[website]]
+        username = current_account['username']
+        
+        # একটিভ টোকেন থেকে নিন
+        if website in self.active_tokens and username in self.active_tokens[website]:
+            token = self.active_tokens[website][username]
+            print(f"🔄 Switching to account: {username} (index: {self.current_account_index[website]})")
+            return token
+        else:
+            print(f"❌ No active token for: {username}")
+            return None
+    
+    def get_current_account_info(self, website: str):
+        """বর্তমান অ্যাকাউন্টের তথ্য রিটার্ন করুন"""
+        if website not in self.accounts_data or not self.accounts_data[website]:
+            return None
+        
+        if website not in self.current_account_index:
+            self.current_account_index[website] = 0
+        
+        account = self.accounts_data[website][self.current_account_index[website]]
+        username = account['username']
+        token_available = website in self.active_tokens and username in self.active_tokens[website]
+        
+        return {
+            'username': username,
+            'index': self.current_account_index[website],
+            'total_accounts': len(self.accounts_data[website]),
+            'token_available': token_available
+        }
+    
+    def get_all_accounts_status(self, website: str):
+        """সকল অ্যাকাউন্টের স্ট্যাটাস রিটার্ন করুন"""
+        if website not in self.accounts_data:
+            return []
+        
+        accounts_status = []
+        for i, account in enumerate(self.accounts_data[website]):
+            username = account['username']
+            token_available = website in self.active_tokens and username in self.active_tokens[website]
+            is_current = i == self.current_account_index.get(website, 0)
+            
+            accounts_status.append({
+                'username': username,
+                'token_available': token_available,
+                'is_current': is_current,
+                'index': i
+            })
+        
+        return accounts_status
+
+# গ্লোবাল ইনস্ট্যান্স তৈরি
+multi_account_manager = MultiAccountManager()
+
+
+
 
 async def encrypt_phone(phone):
     try:
@@ -2309,6 +2491,170 @@ async def all_users_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         message += f"\n\n... এবং আরও {len(users_list) - 20} জন ইউজার"
     
     await update.message.reply_text(message, parse_mode='Markdown')
+
+async def multi_account_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """পাওয়ারফুল মাল্টি-অ্যাকাউন্ট ম্যানেজমেন্ট"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    if not context.args:
+        # মূল মেনু দেখান
+        current_account = multi_account_manager.get_current_account_info(selected_website)
+        all_accounts_status = multi_account_manager.get_all_accounts_status(selected_website)
+        
+        if not current_account:
+            message = (
+                f"🔢 **পাওয়ারফুল মাল্টি-অ্যাকাউন্ট সিস্টেম**\n\n"
+                f"🌐 টাস্ক: {selected_website}\n"
+                f"❌ কোনো অ্যাকাউন্ট কনফিগার করা নেই\n\n"
+                f"⚡ **কমান্ডস:**\n"
+                f"• /multiaccount login - সব অ্যাকাউন্ট লগইন করুন\n"
+                f"• /multiaccount next - পরবর্তী অ্যাকাউন্ট\n"  
+                f"• /multiaccount info - ডিটেইলড ইনফো\n"
+                f"• /multiaccount reload - রিলোড\n\n"
+                f"📁 `multi_accounts.json` ফাইলে অ্যাকাউন্ট যোগ করুন"
+            )
+        else:
+            # অ্যাকাউন্ট স্ট্যাটাস তৈরি করুন
+            status_lines = []
+            for acc in all_accounts_status:
+                status_icon = "🟢" if acc['token_available'] else "🔴"
+                current_icon = " 👈" if acc['is_current'] else ""
+                status_lines.append(f"{status_icon} {acc['username']}{current_icon}")
+            
+            message = (
+                f"🔢 **পাওয়ারফুল মাল্টি-অ্যাকাউন্ট সিস্টেম**\n\n"
+                f"🌐 টাস্ক: {selected_website}\n"
+                f"👤 বর্তমান: {current_account['username']}\n"
+                f"📊 মোট: {current_account['total_accounts']} টি\n"
+                f"🔄 অটো-সুইচ: ✅ একটিভ\n\n"
+                f"**অ্যাকাউন্ট স্ট্যাটাস:**\n" + "\n".join(status_lines) + "\n\n"
+                f"⚡ প্রতি অনলাইন নাম্বারে স্বয়ংক্রিয়ভাবে সুইচ হবে!"
+            )
+        
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    command = context.args[0].lower()
+    
+    if command == "login":
+        # সব অ্যাকাউন্ট লগইন করুন
+        device_name = str(user_id)
+        
+        if not device_manager.exists(device_name):
+            await update.message.reply_text(
+                "❌ প্রথমে 'Set User Agent' সেট করুন",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+            return
+        
+        await update.message.reply_text("🔄 সব অ্যাকাউন্ট লগইন করা হচ্ছে...")
+        
+        success = await multi_account_manager.login_all_accounts(selected_website, device_name)
+        
+        if success:
+            # প্রথম অ্যাকাউন্ট সেট করুন
+            first_token = multi_account_manager.get_next_account_token(selected_website)
+            if first_token:
+                await save_token(user_id, 'main', first_token, selected_website)
+                
+                # মনিটরিং শুরু করুন
+                global auto_monitor
+                if auto_monitor:
+                    if auto_monitor.is_user_monitoring(user_id):
+                        await auto_monitor.stop_monitoring(user_id)
+                    await auto_monitor.start_monitoring(user_id, selected_website, first_token, device_name)
+            
+            await update.message.reply_text(
+                f"✅ সব অ্যাকাউন্ট লগইন সফল!\n\n"
+                f"🌐 টাস্ক: {selected_website}\n"
+                f"👤 অ্যাকাউন্ট: মাল্টি-লগইন ({len(multi_account_manager.accounts_data.get(selected_website, []))} টি)\n"
+                f"🔄 মনিটরিং শুরু করা হয়েছে\n\n"
+                f"⚡ এখন থেকে প্রতি অনলাইন নাম্বারে অটো সুইচ হবে!",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+        else:
+            await update.message.reply_text(
+                f"❌ অ্যাকাউন্ট লগইন ব্যর্থ\n\n"
+                f"ইউজারনেম/পাসওয়ার্ড চেক করুন",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+    
+    elif command == "next":
+        # ম্যানুয়ালি পরবর্তী অ্যাকাউন্টে সুইচ করুন
+        next_token = multi_account_manager.get_next_account_token(selected_website)
+        
+        if not next_token:
+            await update.message.reply_text(
+                f"❌ {selected_website} এর জন্য কোনো একটিভ টোকেন নেই\n\n"
+                f"প্রথমে /multiaccount login কমান্ড দিন",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+            return
+        
+        await save_token(user_id, 'main', next_token, selected_website)
+        
+        # মনিটরিং আপডেট করুন
+        current_info = multi_account_manager.get_current_account_info(selected_website)
+        
+        if auto_monitor and auto_monitor.is_user_monitoring(user_id):
+            device_name = str(user_id)
+            await auto_monitor.stop_monitoring(user_id)
+            await asyncio.sleep(2)
+            await auto_monitor.start_monitoring(user_id, selected_website, next_token, device_name)
+        
+        await update.message.reply_text(
+            f"✅ অ্যাকাউন্ট সুইচ সফল!\n\n"
+            f"👤 নতুন অ্যাকাউন্ট: {current_info['username']}\n"
+            f"📊 পজিশন: {current_info['index'] + 1}/{current_info['total_accounts']}\n"
+            f"🌐 টাস্ক: {selected_website}\n"
+            f"🔄 মনিটরিং আপডেট করা হয়েছে",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+    
+    elif command == "info":
+        # ডিটেইলড ইনফো
+        all_accounts_status = multi_account_manager.get_all_accounts_status(selected_website)
+        
+        if not all_accounts_status:
+            await update.message.reply_text(
+                f"❌ {selected_website} এর জন্য কোনো অ্যাকাউন্ট কনফিগার করা নেই",
+                reply_markup=get_main_keyboard(selected_website, user_id)
+            )
+            return
+        
+        detailed_info = []
+        for acc in all_accounts_status:
+            status = "🟢 লগইন করা" if acc['token_available'] else "🔴 লগইন নেই"
+            current = " ✅ বর্তমান" if acc['is_current'] else ""
+            detailed_info.append(f"{acc['index'] + 1}. {acc['username']} - {status}{current}")
+        
+        message = (
+            f"🔢 **ডিটেইলড অ্যাকাউন্ট ইনফো - {selected_website}**\n\n" +
+            "\n".join(detailed_info) +
+            f"\n\n📊 মোট: {len(all_accounts_status)} টি অ্যাকাউন্ট"
+        )
+        
+        await update.message.reply_text(
+            message,
+            parse_mode='Markdown',
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+    
+    elif command == "reload":
+        multi_account_manager.load_accounts()
+        total_accounts = len(multi_account_manager.accounts_data.get(selected_website, []))
+        
+        await update.message.reply_text(
+            f"✅ অ্যাকাউন্ট লিস্ট রিলোড করা হয়েছে\n\n"
+            f"🌐 টাস্ক: {selected_website}\n"
+            f"📊 মোট অ্যাকাউন্ট: {total_accounts} টি",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
 
 async def today_stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
@@ -3145,6 +3491,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
             )
+        
         elif text == "No":
             await update.message.reply_text(
                 "✅ রিসেট বাতিল করা হয়েছে।",
@@ -3855,6 +4202,9 @@ def main():
         
         # ✅ NEW: Stop monitoring command
         app.add_handler(CommandHandler("stopmonitor", stop_monitoring_command))
+
+# Multi-account commands
+        app.add_handler(CommandHandler("multiaccount", multi_account_command))
 
         # Message & callback handlers
         app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
