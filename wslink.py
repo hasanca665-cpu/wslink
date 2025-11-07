@@ -1701,13 +1701,34 @@ async def start_round_robin_processing(update: Update, context: ContextTypes.DEF
         )
         return
     
-    context.user_data['round_robin_phone'] = phone
+    # Phone number validation এখানেও করুন
+    phone_clean = re.sub(r'[^\d+]', '', phone)
+    if phone_clean.startswith('+1') and len(phone_clean) == 12:
+        normalized_phone = phone_clean
+    elif len(phone_clean) == 10:
+        normalized_phone = '+1' + phone_clean
+    elif len(phone_clean) == 11 and phone_clean.startswith('1'):
+        normalized_phone = '+' + phone_clean
+    else:
+        normalized_phone = None
+
+    if not normalized_phone or not re.match(r'^\+1\d{10}$', normalized_phone):
+        await update.message.reply_text(
+            f"❌ Invalid phone format: {phone}\n"
+            f"Please use: +1XXXXXXXXXX or XXXXXXXXXX format\n"
+            f"Example: +14165551234 or 4165551234",
+            reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
+        )
+        return
+    
+    context.user_data['round_robin_phone'] = normalized_phone
     context.user_data['round_robin_websites'] = websites.copy()
     context.user_data['current_round_robin_index'] = 0
     
     await update.message.reply_text(
         f"🔄 Starting Round-Robin Processing\n"
-        f"📱 Phone: {phone}\n"
+        f"📱 Phone: {normalized_phone} (normalized)\n"
+        f"📋 Original: {phone}\n"
         f"🌐 Websites: {', '.join(websites)}\n\n"
         f"Processing will start with {websites[0]}...",
         reply_markup=get_main_keyboard(websites[0], user_id)
@@ -1743,6 +1764,27 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
     website_config = WEBSITE_CONFIGS[website]
     device_name = str(user_id)
     
+    # প্রথমে phone number normalize করুন
+    phone_clean = re.sub(r'[^\d+]', '', phone)
+    if phone_clean.startswith('+1') and len(phone_clean) == 12:
+        normalized_phone = phone_clean
+    elif len(phone_clean) == 10:
+        normalized_phone = '+1' + phone_clean
+    elif len(phone_clean) == 11 and phone_clean.startswith('1'):
+        normalized_phone = '+' + phone_clean
+    else:
+        normalized_phone = None
+
+    if not normalized_phone or not re.match(r'^\+1\d{10}$', normalized_phone):
+        await update.message.reply_text(
+            f"❌ {website}: Invalid phone format: {phone}\n"
+            f"Expected: +1XXXXXXXXXX or XXXXXXXXXX\n"
+            f"Skipping to next website...",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        await move_to_next_website_round_robin(update, context, user_id)
+        return
+    
     if not device_manager.exists(device_name):
         await update.message.reply_text(
             f"❌ No device set for {website}. Skipping to next website...",
@@ -1763,17 +1805,20 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
         return
     
     await update.message.reply_text(
-        f"🔄 Processing {phone} on {website}...",
+        f"🔄 Processing {normalized_phone} on {website}...\n"
+        f"📱 Original input: {phone}",
         reply_markup=get_main_keyboard(website, user_id)
     )
     
     try:
-        enc_phone = await encrypt_phone(phone)
+        enc_phone = await encrypt_phone(normalized_phone)
         send_resp = await send_code(token, enc_phone, website_config, device_name)
         
         if send_resp.get("code") != 1:
+            error_msg = send_resp.get('msg', 'Unknown error')
             await update.message.reply_text(
-                f"❌ {website}: Failed to send code - {send_resp.get('msg', 'Unknown error')}\nSkipping to next website...",
+                f"❌ {website}: Failed to send code - {error_msg}\n"
+                f"Skipping to next website...",
                 reply_markup=get_main_keyboard(website, user_id)
             )
             await move_to_next_website_round_robin(update, context, user_id)
@@ -1782,18 +1827,30 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
         # কোড চেকিং লজিক - আপনার existing get_code ফাংশন ব্যবহার করুন
         await update.message.reply_text(f"🔄 {website}: Checking for verification code (this may take 10-30 seconds)...")
         code = None
+        code_response_data = None
+        
         for attempt in range(MAX_CODE_ATTEMPTS):
             try:
-                get_resp = await get_code(token, phone, website_config, device_name)
-                logger.debug(f"Get code attempt {attempt + 1} response for {website}: {get_resp}")
+                # get_code ফাংশনে normalized phone পাঠান
+                get_resp = await get_code(token, normalized_phone, website_config, device_name)
+                logger.debug(f"Get code attempt {attempt + 1} for {website}: {get_resp}")
                 
-                if isinstance(get_resp, dict) and get_resp.get("code") == 1:
-                    code = get_resp.get("data", {}).get("code")
-                    if code:
-                        break
-                elif isinstance(get_resp, dict) and get_resp.get("code") != 1:
-                    # যদি API error দেয়, তাহলে লগ করুন কিন্তু চেষ্টা চালিয়ে যান
-                    logger.warning(f"{website}: Get code API error on attempt {attempt + 1}: {get_resp.get('msg')}")
+                if isinstance(get_resp, dict):
+                    if get_resp.get("code") == 1:
+                        code = get_resp.get("data", {}).get("code")
+                        code_response_data = get_resp
+                        if code:
+                            logger.info(f"✅ {website}: Code found: {code}")
+                            break
+                    else:
+                        # API error message লগ করুন
+                        error_msg = get_resp.get('msg', 'Unknown error')
+                        logger.warning(f"{website}: Get code API error on attempt {attempt + 1}: {error_msg}")
+                        
+                        # Specific errors এর জন্য early exit
+                        if "not found" in error_msg.lower() or "not exist" in error_msg.lower():
+                            logger.info(f"{website}: Phone not found in system, stopping retries")
+                            break
                 
             except Exception as e:
                 logger.error(f"{website}: Error in get_code attempt {attempt + 1}: {str(e)}")
@@ -1804,22 +1861,30 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
         if code:
             await update.message.reply_text(
                 f"✅ {website}: Code received!\n\n"
-                f"📱 Phone: {phone}\n"
-                f"🔐 Code: <code>{code}</code>\n\n"
-                f"Enter this code in WhatsApp to complete linking.\n"
+                f"📱 Phone: {normalized_phone}\n"
+                f"🔐 Verification Code: <code>{code}</code>\n\n"
+                f"Enter this 6-digit code in WhatsApp to complete linking.\n"
                 f"📱 Phone will be monitored in list...",
                 parse_mode='HTML',
                 reply_markup=get_main_keyboard(website, user_id)
             )
             # ফোন লিস্টে ফাউন্ড হওয়ার জন্য মোনিটরিং শুরু করুন
-            await monitor_phone_in_list_round_robin(update, context, user_id, phone, website)
+            await monitor_phone_in_list_round_robin(update, context, user_id, normalized_phone, website)
         else:
+            # Detailed error message
+            error_details = ""
+            if code_response_data and isinstance(code_response_data, dict):
+                error_details = f"\nAPI Response: {code_response_data.get('msg', 'No details')}"
+            
             await update.message.reply_text(
-                f"❌ {website}: Failed to get code after {MAX_CODE_ATTEMPTS} attempts\n"
-                f"This might be due to:\n"
-                f"• Phone number already linked\n"
-                f"• Server issues\n"
-                f"• Rate limiting\n"
+                f"❌ {website}: Failed to get verification code after {MAX_CODE_ATTEMPTS} attempts\n"
+                f"📱 Phone: {normalized_phone}\n"
+                f"Possible reasons:\n"
+                f"• Phone number already linked to another account\n"
+                f"• Server temporary issue\n"
+                f"• Rate limiting by provider\n"
+                f"• Invalid phone number format\n"
+                f"{error_details}\n"
                 f"Skipping to next website...",
                 reply_markup=get_main_keyboard(website, user_id)
             )
@@ -1828,7 +1893,7 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
     except Exception as e:
         logger.error(f"Error processing phone for {website}: {str(e)}")
         await update.message.reply_text(
-            f"❌ {website}: Error - {str(e)}\nSkipping to next website...",
+            f"❌ {website}: Unexpected error - {str(e)}\nSkipping to next website...",
             reply_markup=get_main_keyboard(website, user_id)
         )
         await move_to_next_website_round_robin(update, context, user_id)
