@@ -529,15 +529,15 @@ WEBSITE_CONFIGS = {
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
-    "22JOB": {
-        "name": "22JOB",
-        "api_domain": "https://web.112233job.com/",
-        "origin": "https://22job.me",
-        "referer": "https://22job.me/",
+    "TG377": {
+        "name": "TG377",
+        "api_domain": "https://tg377.club/",
+        "origin": "https://tg377.vip",
+        "referer": "https://tg377.vip/",
         "login_path": "api/user/signIn",
         "send_code_path": "api/ws_phone/sendCode",
         "get_code_path": "api/ws_phone/getCode",
-        "phone_list_url": "https://web.112233job.com/api/ws_phone/phoneList",
+        "phone_list_url": "https://tg377.club/api/ws_phone/phoneList",
         "signup_path": "api/user/signUp",
         "referral_field": "invite_code"
     },
