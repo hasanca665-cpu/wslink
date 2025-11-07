@@ -2545,6 +2545,25 @@ async def error_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=get_main_keyboard(selected_website, user_id)
             )
 
+from flask import Flask, request
+import threading
+
+# Flask app তৈরি করুন
+flask_app = Flask(__name__)
+
+@flask_app.route('/')
+def home():
+    return "Telegram Bot is Running!"
+
+@flask_app.route('/health')
+def health():
+    return "OK"
+
+def run_flask():
+    import os
+    port = int(os.environ.get('PORT', 8080))
+    flask_app.run(host='0.0.0.0', port=port)
+
 def main():
     app = Application.builder().token(TELEGRAM_TOKEN).build()
 
@@ -2559,6 +2578,15 @@ def main():
     app.add_error_handler(error_handler)
 
     logger.info("Bot is starting...")
+    
+    import os
+    if os.environ.get('RENDER'):
+        # Render.com এ Flask server এবং bot একসাথে run করবে
+        flask_thread = threading.Thread(target=run_flask)
+        flask_thread.daemon = True
+        flask_thread.start()
+    
+    # Bot always run in polling mode
     app.run_polling(allowed_updates=Update.ALL_TYPES)
 
 if __name__ == "__main__":
