@@ -1913,10 +1913,10 @@ async def monitor_phone_in_list_round_robin(update: Update, context: ContextType
         await move_to_next_website_round_robin(update, context, user_id)
         return
     
-    await update.message.reply_text(
-        f"👀 {website}: Monitoring phone list for {phone}...",
-        reply_markup=get_main_keyboard(website, user_id)
-    )
+    #await update.message.reply_text(
+        #f"👀 {website}: Monitoring phone list for {phone}...",
+        #reply_markup=get_main_keyboard(website, user_id)
+    #)
     
     for attempt in range(30):  # 30 বার চেক করুন (প্রতি 5 সেকেন্ডে)
         try:
@@ -1947,7 +1947,7 @@ async def monitor_phone_in_list_round_robin(update: Update, context: ContextType
     
     # 2.5 মিনিট পরেও না পাওয়া গেলে পরবর্তী ওয়েবসাইটে যান
     await update.message.reply_text(
-        f"⏰ {website}: Phone not found in list after 2.5 minutes\n"
+        f"⏰ {website}: Phone not found in list after 30 seconds\n"
         f"This might be because:\n"
         f"• User didn't enter the code\n"
         f"• Code expired\n"
