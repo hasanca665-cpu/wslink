@@ -924,12 +924,15 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
         except Exception as e:
             logger.error(f"Error loading multi-account status in get_main_keyboard: {str(e)}")
     
+    # বাটন টেক্সট ঠিক করুন
+    multi_website_text = "Multi-Website Settings"  # শুধু এই টেক্সট ব্যবহার করুন
+    
     keyboard = [
         [KeyboardButton("Log in Account"), KeyboardButton("Register Account")],
         [KeyboardButton(link_text), KeyboardButton(number_list_text)],
         [KeyboardButton("Reset All"), KeyboardButton(set_user_agent_text)],
         [KeyboardButton(set_proxy_text), KeyboardButton(multi_account_text)],
-        [KeyboardButton(f"{round_robin_status} Multi-Website Settings")]
+        [KeyboardButton(multi_website_text)]  # শুধু একটিই টেক্সট ব্যবহার করুন
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
@@ -1776,34 +1779,54 @@ async def process_phone_for_website_round_robin(update: Update, context: Context
             await move_to_next_website_round_robin(update, context, user_id)
             return
         
-        # কোড চেকিং লজিক (আপনার existing code ব্যবহার করুন)
-        await update.message.reply_text("🔄 Checking for verification code...")
+        # কোড চেকিং লজিক - আপনার existing get_code ফাংশন ব্যবহার করুন
+        await update.message.reply_text(f"🔄 {website}: Checking for verification code (this may take 10-30 seconds)...")
         code = None
         for attempt in range(MAX_CODE_ATTEMPTS):
-            get_resp = await get_code(token, phone, website_config, device_name)
-            if isinstance(get_resp, dict) and get_resp.get("code") == 1:
-                code = get_resp.get("data", {}).get("code")
-                if code:
-                    break
+            try:
+                get_resp = await get_code(token, phone, website_config, device_name)
+                logger.debug(f"Get code attempt {attempt + 1} response for {website}: {get_resp}")
+                
+                if isinstance(get_resp, dict) and get_resp.get("code") == 1:
+                    code = get_resp.get("data", {}).get("code")
+                    if code:
+                        break
+                elif isinstance(get_resp, dict) and get_resp.get("code") != 1:
+                    # যদি API error দেয়, তাহলে লগ করুন কিন্তু চেষ্টা চালিয়ে যান
+                    logger.warning(f"{website}: Get code API error on attempt {attempt + 1}: {get_resp.get('msg')}")
+                
+            except Exception as e:
+                logger.error(f"{website}: Error in get_code attempt {attempt + 1}: {str(e)}")
+            
             if attempt < MAX_CODE_ATTEMPTS - 1:
                 await asyncio.sleep(CODE_CHECK_INTERVAL)
-        
+
         if code:
             await update.message.reply_text(
-                f"✅ {website}: Code received - {code}\n"
+                f"✅ {website}: Code received!\n\n"
+                f"📱 Phone: {phone}\n"
+                f"🔐 Code: <code>{code}</code>\n\n"
+                f"Enter this code in WhatsApp to complete linking.\n"
                 f"📱 Phone will be monitored in list...",
+                parse_mode='HTML',
                 reply_markup=get_main_keyboard(website, user_id)
             )
             # ফোন লিস্টে ফাউন্ড হওয়ার জন্য মোনিটরিং শুরু করুন
             await monitor_phone_in_list_round_robin(update, context, user_id, phone, website)
         else:
             await update.message.reply_text(
-                f"❌ {website}: Failed to get code after {MAX_CODE_ATTEMPTS} attempts\nSkipping to next website...",
+                f"❌ {website}: Failed to get code after {MAX_CODE_ATTEMPTS} attempts\n"
+                f"This might be due to:\n"
+                f"• Phone number already linked\n"
+                f"• Server issues\n"
+                f"• Rate limiting\n"
+                f"Skipping to next website...",
                 reply_markup=get_main_keyboard(website, user_id)
             )
             await move_to_next_website_round_robin(update, context, user_id)
         
     except Exception as e:
+        logger.error(f"Error processing phone for {website}: {str(e)}")
         await update.message.reply_text(
             f"❌ {website}: Error - {str(e)}\nSkipping to next website...",
             reply_markup=get_main_keyboard(website, user_id)
@@ -1818,12 +1841,23 @@ async def monitor_phone_in_list_round_robin(update: Update, context: ContextType
     token = tokens.get(str(user_id), {}).get(website, {}).get('main')
     
     if not token:
+        await update.message.reply_text(
+            f"❌ {website}: Token not found for monitoring\nSkipping to next website...",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
         await move_to_next_website_round_robin(update, context, user_id)
         return
+    
+    await update.message.reply_text(
+        f"👀 {website}: Monitoring phone list for {phone}...",
+        reply_markup=get_main_keyboard(website, user_id)
+    )
     
     for attempt in range(30):  # 30 বার চেক করুন (প্রতি 5 সেকেন্ডে)
         try:
             phone_list_result = await get_phone_list(token, 'main', website_config, device_name)
+            
+            # ফোন নাম্বার লিস্টে আছে কিনা চেক করুন
             if phone in str(phone_list_result):
                 await update.message.reply_text(
                     f"✅ {website}: Phone {phone} found in list!\n"
@@ -1832,14 +1866,28 @@ async def monitor_phone_in_list_round_robin(update: Update, context: ContextType
                 )
                 await move_to_next_website_round_robin(update, context, user_id)
                 return
+            
+            # যদি প্রথম ৫টি চেকের মধ্যে না থাকে, তাহলে status আপডেট দিন
+            if attempt == 5:
+                await update.message.reply_text(
+                    f"⏳ {website}: Still monitoring... Phone not in list yet",
+                    reply_markup=get_main_keyboard(website, user_id)
+                )
+                
         except Exception as e:
             logger.error(f"Error monitoring phone list for {website}: {str(e)}")
+            # monitoring error হলেও চেষ্টা চালিয়ে যান
         
-        await asyncio.sleep(0)  # 5 সেকেন্ড অপেক্ষা করুন
+        await asyncio.sleep(1)  # 5 সেকেন্ড অপেক্ষা করুন
     
     # 2.5 মিনিট পরেও না পাওয়া গেলে পরবর্তী ওয়েবসাইটে যান
     await update.message.reply_text(
-        f"⏰ {website}: Phone not found in list after 2.5 minutes\nSkipping to next website...",
+        f"⏰ {website}: Phone not found in list after 2.5 minutes\n"
+        f"This might be because:\n"
+        f"• User didn't enter the code\n"
+        f"• Code expired\n"
+        f"• Technical issue\n"
+        f"Skipping to next website...",
         reply_markup=get_main_keyboard(website, user_id)
     )
     await move_to_next_website_round_robin(update, context, user_id)
@@ -1949,10 +1997,12 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await multi_account_control_command(update, context)
         return
     
-    # নতুন: Multi-Website Settings
+    # নতুন: Multi-Website Settings - শুধু একটি টেক্সট চেক করুন
     if text == "Multi-Website Settings":
         await show_multi_website_settings(update, context)
         return
+    
+    # ... বাকি existing code ...
     
     # নতুন: Enable Round-Robin
     if text == "🔄 Enable Round-Robin":
@@ -2361,12 +2411,28 @@ async def show_multi_website_settings(update: Update, context: ContextTypes.DEFA
         status_icon = "✅" if is_enabled else "❌"
         accounts_info.append(f"{status_icon} {website}: {account_count} accounts")
     
+    # Side by side বাটন তৈরি করুন - প্রতি লাইনে ২টি বাটন
     keyboard = []
-    for website in WEBSITE_CONFIGS.keys():
-        is_enabled = website in status.enabled_websites
-        btn_text = f"{'✅' if is_enabled else '❌'} {website}"
-        keyboard.append([KeyboardButton(btn_text)])
+    websites_list = list(WEBSITE_CONFIGS.keys())
     
+    for i in range(0, len(websites_list), 2):
+        row = []
+        # প্রথম বাটন
+        website1 = websites_list[i]
+        is_enabled1 = website1 in status.enabled_websites
+        btn_text1 = f"{'✅' if is_enabled1 else '❌'} {website1}"
+        row.append(KeyboardButton(btn_text1))
+        
+        # দ্বিতীয় বাটন (যদি থাকে)
+        if i + 1 < len(websites_list):
+            website2 = websites_list[i + 1]
+            is_enabled2 = website2 in status.enabled_websites
+            btn_text2 = f"{'✅' if is_enabled2 else '❌'} {website2}"
+            row.append(KeyboardButton(btn_text2))
+        
+        keyboard.append(row)
+    
+    # নিয়ন্ত্রণ বাটনগুলোও side by side
     keyboard.append([KeyboardButton("💾 Save Settings"), KeyboardButton("🔄 Enable Round-Robin")])
     keyboard.append([KeyboardButton("🔴 Disable Round-Robin"), KeyboardButton("📊 Show All Accounts")])
     keyboard.append([KeyboardButton("Back to Main Menu")])
