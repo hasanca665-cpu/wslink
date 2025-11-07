@@ -134,6 +134,11 @@ class MultiAccountStatus:
     current_phone: str = ""
     website: str = ""
     last_activity: str = ""
+    # নতুন ফিল্ড যোগ করুন
+    enabled_websites: List[str] = field(default_factory=list)  # সক্রিয় ওয়েবসাইটের লিস্ট
+    current_website_index: int = 0  # বর্তমান ওয়েবসাইটের ইনডেক্স
+    round_robin_mode: bool = False  # রাউন্ড-রবিন মোড চালু আছে কিনা
+    all_website_accounts: Dict[str, List[Dict[str, str]]] = field(default_factory=dict)  # সব ওয়েবসাইটের একাউন্টস
 
 @dataclass
 class DeviceProfile:
@@ -584,7 +589,7 @@ class MultiAccountManager:
         self.status_file = MULTI_ACCOUNT_STATUS_FILE
     
     async def save_accounts(self, user_id: int, accounts: List[Dict[str, str]], website: str):
-        """সব multi accounts সেভ করে"""
+        """সব multi accounts সেভ করে (সব ওয়েবসাইটের জন্য)"""
         try:
             if os.path.exists(self.accounts_file):
                 async with aiofiles.open(self.accounts_file, 'r') as f:
@@ -602,13 +607,19 @@ class MultiAccountManager:
                 await f.write(json.dumps(data, indent=4))
             
             logger.info(f"Saved {len(accounts)} multi-accounts for user {user_id} on {website}")
+            
+            # status-এও সেভ করুন
+            status = await self.load_status(user_id)
+            status.all_website_accounts[website] = accounts
+            await self.save_status(user_id, status)
+            
             return True
         except Exception as e:
             logger.error(f"Error saving multi-accounts: {str(e)}")
             return False
     
     async def load_accounts(self, user_id: int, website: str) -> List[Dict[str, str]]:
-        """multi accounts লোড করে"""
+        """multi accounts লোড করে (সব ওয়েবসাইটের জন্য)"""
         try:
             if not os.path.exists(self.accounts_file):
                 return []
@@ -640,7 +651,12 @@ class MultiAccountManager:
                 "processing": status.processing,
                 "current_phone": status.current_phone,
                 "website": status.website,
-                "last_activity": status.last_activity
+                "last_activity": status.last_activity,
+                # নতুন ফিল্ডস
+                "enabled_websites": status.enabled_websites,
+                "current_website_index": status.current_website_index,
+                "round_robin_mode": status.round_robin_mode,
+                "all_website_accounts": status.all_website_accounts
             }
             
             async with aiofiles.open(self.status_file, 'w') as f:
@@ -661,6 +677,19 @@ class MultiAccountManager:
                 data = json.loads(await f.read())
             
             user_data = data.get(str(user_id), {})
+            
+            # পুরোনো ডেটা কম্প্যাটিবিলিটির জন্য
+            all_website_accounts = user_data.get("all_website_accounts", {})
+            if not all_website_accounts:
+                # পুরোনো ডেটা থেকে কনভার্ট করুন
+                try:
+                    if os.path.exists(self.accounts_file):
+                        async with aiofiles.open(self.accounts_file, 'r') as f:
+                            accounts_data = json.loads(await f.read())
+                        all_website_accounts = accounts_data.get(str(user_id), {})
+                except:
+                    all_website_accounts = {}
+            
             return MultiAccountStatus(
                 enabled=user_data.get("enabled", False),
                 current_account_index=user_data.get("current_account_index", 0),
@@ -668,7 +697,12 @@ class MultiAccountManager:
                 processing=user_data.get("processing", False),
                 current_phone=user_data.get("current_phone", ""),
                 website=user_data.get("website", ""),
-                last_activity=user_data.get("last_activity", "")
+                last_activity=user_data.get("last_activity", ""),
+                # নতুন ফিল্ডস
+                enabled_websites=user_data.get("enabled_websites", []),
+                current_website_index=user_data.get("current_website_index", 0),
+                round_robin_mode=user_data.get("round_robin_mode", False),
+                all_website_accounts=all_website_accounts
             )
         except Exception as e:
             logger.error(f"Error loading multi-account status: {str(e)}")
@@ -694,11 +728,71 @@ class MultiAccountManager:
             async with aiofiles.open(self.accounts_file, 'w') as f:
                 await f.write(json.dumps(data, indent=4))
             
+            # status-থেকেও ক্লিয়ার করুন
+            status = await self.load_status(user_id)
+            if website:
+                if website in status.all_website_accounts:
+                    del status.all_website_accounts[website]
+            else:
+                status.all_website_accounts = {}
+            
+            await self.save_status(user_id, status)
+            
             logger.info(f"Cleared multi-accounts for user {user_id}")
             return True
         except Exception as e:
             logger.error(f"Error clearing multi-accounts: {str(e)}")
             return False
+    
+    async def save_website_settings(self, user_id: int, enabled_websites: List[str], round_robin_mode: bool):
+        """ওয়েবসাইট সেটিংস সেভ করে"""
+        try:
+            status = await self.load_status(user_id)
+            status.enabled_websites = enabled_websites
+            status.round_robin_mode = round_robin_mode
+            await self.save_status(user_id, status)
+            return True
+        except Exception as e:
+            logger.error(f"Error saving website settings: {str(e)}")
+            return False
+    
+    async def get_next_website(self, user_id: int) -> Optional[str]:
+        """পরবর্তী ওয়েবসাইট রিটার্ন করে"""
+        try:
+            status = await self.load_status(user_id)
+            if not status.round_robin_mode or not status.enabled_websites:
+                return None
+            
+            if status.current_website_index >= len(status.enabled_websites):
+                status.current_website_index = 0
+            
+            next_website = status.enabled_websites[status.current_website_index]
+            status.current_website_index += 1
+            await self.save_status(user_id, status)
+            return next_website
+        except Exception as e:
+            logger.error(f"Error getting next website: {str(e)}")
+            return None
+    
+    async def reset_website_rotation(self, user_id: int):
+        """ওয়েবসাইট রোটেশন রিসেট করে"""
+        try:
+            status = await self.load_status(user_id)
+            status.current_website_index = 0
+            await self.save_status(user_id, status)
+            return True
+        except Exception as e:
+            logger.error(f"Error resetting website rotation: {str(e)}")
+            return False
+    
+    async def get_all_websites_with_accounts(self, user_id: int) -> Dict[str, List[Dict[str, str]]]:
+        """সব ওয়েবসাইট এবং তাদের একাউন্টস রিটার্ন করে"""
+        try:
+            status = await self.load_status(user_id)
+            return status.all_website_accounts
+        except Exception as e:
+            logger.error(f"Error getting all websites with accounts: {str(e)}")
+            return {}
 
 # Multi Account Manager ইনিশিয়ালাইজ করুন
 multi_account_manager = MultiAccountManager()
@@ -812,17 +906,21 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
     proxy_set = device_set and device_manager.load(str(user_id)).proxy is not None
     set_proxy_text = f"{'✅ ' if proxy_set else ''}Set Proxy"
     
-    # Multi-Account status চেক করুন - synchronous way তে
+    # Multi-Account status চেক করুন
     multi_account_text = "Multi-Account"
+    round_robin_status = ""
     if user_id:
         try:
-            # Synchronous way তে status লোড করুন
             if os.path.exists(MULTI_ACCOUNT_STATUS_FILE):
                 with open(MULTI_ACCOUNT_STATUS_FILE, 'r') as f:
                     data = json.load(f)
                 user_data = data.get(str(user_id), {})
                 if user_data.get("enabled", False):
                     multi_account_text = f"🔄 Multi-Account"
+                if user_data.get("round_robin_mode", False):
+                    round_robin_status = "🟢"
+                else:
+                    round_robin_status = "🔴"
         except Exception as e:
             logger.error(f"Error loading multi-account status in get_main_keyboard: {str(e)}")
     
@@ -830,7 +928,8 @@ def get_main_keyboard(selected_website=DEFAULT_SELECTED_WEBSITE, user_id=None):
         [KeyboardButton("Log in Account"), KeyboardButton("Register Account")],
         [KeyboardButton(link_text), KeyboardButton(number_list_text)],
         [KeyboardButton("Reset All"), KeyboardButton(set_user_agent_text)],
-        [KeyboardButton(set_proxy_text), KeyboardButton(multi_account_text)]
+        [KeyboardButton(set_proxy_text), KeyboardButton(multi_account_text)],
+        [KeyboardButton(f"{round_robin_status} Multi-Website Settings")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=False)
 
@@ -1587,6 +1686,171 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
         )
 
+async def start_round_robin_processing(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, phone: str):
+    """রাউন্ড-রবিন প্রসেসিং শুরু করে"""
+    status = await multi_account_manager.load_status(user_id)
+    websites = status.enabled_websites
+    
+    if not websites:
+        await update.message.reply_text(
+            "❌ No websites enabled for round-robin processing.",
+            reply_markup=get_main_keyboard(DEFAULT_SELECTED_WEBSITE, user_id)
+        )
+        return
+    
+    context.user_data['round_robin_phone'] = phone
+    context.user_data['round_robin_websites'] = websites.copy()
+    context.user_data['current_round_robin_index'] = 0
+    
+    await update.message.reply_text(
+        f"🔄 Starting Round-Robin Processing\n"
+        f"📱 Phone: {phone}\n"
+        f"🌐 Websites: {', '.join(websites)}\n\n"
+        f"Processing will start with {websites[0]}...",
+        reply_markup=get_main_keyboard(websites[0], user_id)
+    )
+    
+    await process_next_website_in_round_robin(update, context, user_id)
+
+async def process_next_website_in_round_robin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """পরবর্তী ওয়েবসাইট প্রসেস করে"""
+    websites = context.user_data.get('round_robin_websites', [])
+    current_index = context.user_data.get('current_round_robin_index', 0)
+    phone = context.user_data.get('round_robin_phone', '')
+    
+    if current_index >= len(websites):
+        # সব ওয়েবসাইট কমপ্লিট
+        await update.message.reply_text(
+            f"✅ Round-Robin Complete!\n"
+            f"📱 Phone: {phone}\n"
+            f"🌐 Processed on all {len(websites)} websites\n\n"
+            f"Send another WhatsApp number to continue.",
+            reply_markup=get_main_keyboard(websites[0] if websites else DEFAULT_SELECTED_WEBSITE, user_id)
+        )
+        context.user_data.pop('round_robin_phone', None)
+        context.user_data.pop('round_robin_websites', None)
+        context.user_data.pop('current_round_robin_index', None)
+        return
+    
+    current_website = websites[current_index]
+    await process_phone_for_website_round_robin(update, context, user_id, phone, current_website)
+
+async def process_phone_for_website_round_robin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, phone: str, website: str):
+    """একটি ওয়েবসাইটের জন্য ফোন প্রসেস করে (রাউন্ড-রবিন মোডে)"""
+    website_config = WEBSITE_CONFIGS[website]
+    device_name = str(user_id)
+    
+    if not device_manager.exists(device_name):
+        await update.message.reply_text(
+            f"❌ No device set for {website}. Skipping to next website...",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        await move_to_next_website_round_robin(update, context, user_id)
+        return
+    
+    tokens = load_tokens()
+    token = tokens.get(str(user_id), {}).get(website, {}).get('main')
+    
+    if not token:
+        await update.message.reply_text(
+            f"❌ No {website} account found. Skipping to next website...",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        await move_to_next_website_round_robin(update, context, user_id)
+        return
+    
+    await update.message.reply_text(
+        f"🔄 Processing {phone} on {website}...",
+        reply_markup=get_main_keyboard(website, user_id)
+    )
+    
+    try:
+        enc_phone = await encrypt_phone(phone)
+        send_resp = await send_code(token, enc_phone, website_config, device_name)
+        
+        if send_resp.get("code") != 1:
+            await update.message.reply_text(
+                f"❌ {website}: Failed to send code - {send_resp.get('msg', 'Unknown error')}\nSkipping to next website...",
+                reply_markup=get_main_keyboard(website, user_id)
+            )
+            await move_to_next_website_round_robin(update, context, user_id)
+            return
+        
+        # কোড চেকিং লজিক (আপনার existing code ব্যবহার করুন)
+        await update.message.reply_text("🔄 Checking for verification code...")
+        code = None
+        for attempt in range(MAX_CODE_ATTEMPTS):
+            get_resp = await get_code(token, phone, website_config, device_name)
+            if isinstance(get_resp, dict) and get_resp.get("code") == 1:
+                code = get_resp.get("data", {}).get("code")
+                if code:
+                    break
+            if attempt < MAX_CODE_ATTEMPTS - 1:
+                await asyncio.sleep(CODE_CHECK_INTERVAL)
+        
+        if code:
+            await update.message.reply_text(
+                f"✅ {website}: Code received - {code}\n"
+                f"📱 Phone will be monitored in list...",
+                reply_markup=get_main_keyboard(website, user_id)
+            )
+            # ফোন লিস্টে ফাউন্ড হওয়ার জন্য মোনিটরিং শুরু করুন
+            await monitor_phone_in_list_round_robin(update, context, user_id, phone, website)
+        else:
+            await update.message.reply_text(
+                f"❌ {website}: Failed to get code after {MAX_CODE_ATTEMPTS} attempts\nSkipping to next website...",
+                reply_markup=get_main_keyboard(website, user_id)
+            )
+            await move_to_next_website_round_robin(update, context, user_id)
+        
+    except Exception as e:
+        await update.message.reply_text(
+            f"❌ {website}: Error - {str(e)}\nSkipping to next website...",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        await move_to_next_website_round_robin(update, context, user_id)
+
+async def monitor_phone_in_list_round_robin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int, phone: str, website: str):
+    """ফোন লিস্টে ফাউন্ড হওয়ার জন্য মোনিটর করে"""
+    website_config = WEBSITE_CONFIGS[website]
+    device_name = str(user_id)
+    tokens = load_tokens()
+    token = tokens.get(str(user_id), {}).get(website, {}).get('main')
+    
+    if not token:
+        await move_to_next_website_round_robin(update, context, user_id)
+        return
+    
+    for attempt in range(30):  # 30 বার চেক করুন (প্রতি 5 সেকেন্ডে)
+        try:
+            phone_list_result = await get_phone_list(token, 'main', website_config, device_name)
+            if phone in str(phone_list_result):
+                await update.message.reply_text(
+                    f"✅ {website}: Phone {phone} found in list!\n"
+                    f"🔄 Moving to next website...",
+                    reply_markup=get_main_keyboard(website, user_id)
+                )
+                await move_to_next_website_round_robin(update, context, user_id)
+                return
+        except Exception as e:
+            logger.error(f"Error monitoring phone list for {website}: {str(e)}")
+        
+        await asyncio.sleep(0)  # 5 সেকেন্ড অপেক্ষা করুন
+    
+    # 2.5 মিনিট পরেও না পাওয়া গেলে পরবর্তী ওয়েবসাইটে যান
+    await update.message.reply_text(
+        f"⏰ {website}: Phone not found in list after 2.5 minutes\nSkipping to next website...",
+        reply_markup=get_main_keyboard(website, user_id)
+    )
+    await move_to_next_website_round_robin(update, context, user_id)
+
+async def move_to_next_website_round_robin(update: Update, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+    """পরবর্তী ওয়েবসাইটে移動 করে"""
+    current_index = context.user_data.get('current_round_robin_index', 0)
+    context.user_data['current_round_robin_index'] = current_index + 1
+    await process_next_website_in_round_robin(update, context, user_id)
+
+
 async def login_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text.strip()
@@ -1679,6 +1943,55 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_state = context.user_data.get('state', '')
     text = update.message.text.strip()
     selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    # Multi-Account কন্ট্রোল
+    if text == "Multi-Account" or text == "🔄 Multi-Account":
+        await multi_account_control_command(update, context)
+        return
+    
+    # নতুন: Multi-Website Settings
+    if text == "Multi-Website Settings":
+        await show_multi_website_settings(update, context)
+        return
+    
+    # নতুন: Enable Round-Robin
+    if text == "🔄 Enable Round-Robin":
+        await enable_round_robin_mode(update, context)
+        return
+    
+    # নতুন: Disable Round-Robin  
+    if text == "🔴 Disable Round-Robin":
+        await disable_round_robin_mode(update, context)
+        return
+    
+    # নতুন: Show All Accounts
+    if text == "📊 Show All Accounts":
+        await show_all_accounts_summary(update, context)
+        return
+    
+    # নতুন: Save Settings
+    if text == "💾 Save Settings":
+        user_id = update.message.from_user.id
+        selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+        
+        status = await multi_account_manager.load_status(user_id)
+        
+        await update.message.reply_text(
+            f"✅ Website Settings Saved!\n"
+            f"🌐 Enabled Websites: {', '.join(status.enabled_websites) if status.enabled_websites else 'None'}\n"
+            f"🔄 Round-Robin: {'ON' if status.round_robin_mode else 'OFF'}",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # নতুন: ওয়েবসাইট টগল করা
+    if text.startswith("✅ ") or text.startswith("❌ "):
+        website_name = text[2:].strip()  # প্রথম ২টি ক্যারেক্টর (✅ বা ❌) বাদ দিন
+        if website_name in WEBSITE_CONFIGS:
+            await toggle_website_selection(update, context, website_name)
+        return
+    
+    # ... existing code ...
     
     # Multi-Account কন্ট্রোল
     if text == "Multi-Account" or text == "🔄 Multi-Account":
@@ -2035,6 +2348,209 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup=get_main_keyboard(selected_website, user_id)
         )
 
+async def show_multi_website_settings(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """মাল্টি-ওয়েবসাইট সেটিংস দেখায়"""
+    user_id = update.message.from_user.id
+    status = await multi_account_manager.load_status(user_id)
+    
+    # সব ওয়েবসাইটের একাউন্ট সংখ্যা দেখান
+    accounts_info = []
+    for website in WEBSITE_CONFIGS.keys():
+        account_count = len(status.all_website_accounts.get(website, []))
+        is_enabled = website in status.enabled_websites
+        status_icon = "✅" if is_enabled else "❌"
+        accounts_info.append(f"{status_icon} {website}: {account_count} accounts")
+    
+    keyboard = []
+    for website in WEBSITE_CONFIGS.keys():
+        is_enabled = website in status.enabled_websites
+        btn_text = f"{'✅' if is_enabled else '❌'} {website}"
+        keyboard.append([KeyboardButton(btn_text)])
+    
+    keyboard.append([KeyboardButton("💾 Save Settings"), KeyboardButton("🔄 Enable Round-Robin")])
+    keyboard.append([KeyboardButton("🔴 Disable Round-Robin"), KeyboardButton("📊 Show All Accounts")])
+    keyboard.append([KeyboardButton("Back to Main Menu")])
+    
+    message = (
+        "🌐 Multi-Website Round-Robin Settings\n\n"
+        "Select websites to enable/disable:\n"
+        "✅ = Enabled | ❌ = Disabled\n\n"
+        f"🔄 Round-Robin Mode: {'🟢 ON' if status.round_robin_mode else '🔴 OFF'}\n\n"
+        "Accounts Summary:\n" + "\n".join(accounts_info)
+    )
+    
+    await update.message.reply_text(
+        message,
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True, one_time_keyboard=True)
+    )
+
+async def enable_round_robin_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """রাউন্ড-রবিন মোড চালু করে"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    status = await multi_account_manager.load_status(user_id)
+    if not status.enabled_websites:
+        await update.message.reply_text(
+            "❌ No websites enabled. Please enable at least one website in Multi-Website Settings first.",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    # সব enabled ওয়েবসাইটে একাউন্ট আছে কিনা চেক করুন
+    missing_accounts = []
+    for website in status.enabled_websites:
+        if website not in status.all_website_accounts or not status.all_website_accounts[website]:
+            missing_accounts.append(website)
+    
+    if missing_accounts:
+        await update.message.reply_text(
+            f"❌ No accounts found for: {', '.join(missing_accounts)}\n"
+            f"Please login accounts first using 'Log in Account' for these websites.",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    status.round_robin_mode = True
+    status.current_website_index = 0
+    await multi_account_manager.save_status(user_id, status)
+    
+    # একাউন্ট সামারি তৈরি করুন
+    accounts_summary = []
+    for website in status.enabled_websites:
+        account_count = len(status.all_website_accounts.get(website, []))
+        accounts_summary.append(f"{website}: {account_count} accounts")
+    
+    await update.message.reply_text(
+        f"✅ Round-Robin Mode Enabled!\n"
+        f"🌐 Active Websites: {', '.join(status.enabled_websites)}\n"
+        f"📊 Accounts: {', '.join(accounts_summary)}\n\n"
+        f"🔄 Next WhatsApp number will be processed across all enabled websites automatically.",
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
+
+async def disable_round_robin_mode(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """রাউন্ড-রবিন মোড বন্ধ করে"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    status = await multi_account_manager.load_status(user_id)
+    status.round_robin_mode = False
+    await multi_account_manager.save_status(user_id, status)
+    
+    await update.message.reply_text(
+        "🔴 Round-Robin Mode Disabled",
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
+
+async def show_all_accounts_summary(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """সব ওয়েবসাইটের একাউন্ট সামারি দেখায়"""
+    user_id = update.message.from_user.id
+    selected_website = context.user_data.get('selected_website', DEFAULT_SELECTED_WEBSITE)
+    
+    status = await multi_account_manager.load_status(user_id)
+    
+    if not status.all_website_accounts:
+        await update.message.reply_text(
+            "❌ No multi-accounts found for any website.",
+            reply_markup=get_main_keyboard(selected_website, user_id)
+        )
+        return
+    
+    message = "📊 All Website Accounts Summary:\n\n"
+    for website, accounts in status.all_website_accounts.items():
+        if accounts:
+            message += f"🌐 {website}: {len(accounts)} accounts\n"
+            for i, account in enumerate(accounts[:3], 1):  # প্রথম ৩টি একাউন্ট দেখান
+                message += f"   {i}. {account['username'][:10]}...\n"
+            if len(accounts) > 3:
+                message += f"   ... and {len(accounts) - 3} more\n"
+            message += "\n"
+    
+    message += f"🔄 Round-Robin Mode: {'🟢 ON' if status.round_robin_mode else '🔴 OFF'}\n"
+    message += f"✅ Enabled Websites: {', '.join(status.enabled_websites) if status.enabled_websites else 'None'}"
+    
+    await update.message.reply_text(
+        message,
+        reply_markup=get_main_keyboard(selected_website, user_id)
+    )
+
+async def toggle_website_selection(update: Update, context: ContextTypes.DEFAULT_TYPE, website: str):
+    """ওয়েবসাইট টগল করে"""
+    user_id = update.message.from_user.id
+    status = await multi_account_manager.load_status(user_id)
+    
+    if website in status.enabled_websites:
+        status.enabled_websites.remove(website)
+    else:
+        status.enabled_websites.append(website)
+    
+    await multi_account_manager.save_status(user_id, status)
+    await show_multi_website_settings(update, context)
+
+async def process_multi_account_login(update: Update, context: ContextTypes.DEFAULT_TYPE, credentials_text: str, website: str):
+    """Multi account login প্রসেস করে (সব ওয়েবসাইটের জন্য সেভ করে)"""
+    user_id = update.message.from_user.id
+    device_name = str(user_id)
+    
+    if not device_manager.exists(device_name):
+        await update.message.reply_text(
+            "❌ Please set user agent first using 'Set User Agent'.",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        return False
+    
+    # credentials পার্স করুন
+    lines = credentials_text.strip().split('\n')
+    accounts = []
+    
+    for line in lines:
+        line = line.strip()
+        if ':' in line:
+            username, password = line.split(':', 1)
+            username = username.strip()
+            password = password.strip()
+            if username and password:
+                accounts.append({"username": username, "password": password})
+    
+    if not accounts:
+        await update.message.reply_text(
+            "❌ No valid username:password pairs found.",
+            reply_markup=get_main_keyboard(website, user_id)
+        )
+        return False
+    
+    # accounts সেভ করুন (সব ওয়েবসাইটের জন্য)
+    await multi_account_manager.save_accounts(user_id, accounts, website)
+    
+    # status সেটাপ করুন
+    status = await multi_account_manager.load_status(user_id)
+    status.enabled = True
+    status.current_account_index = 0
+    status.total_accounts = len(accounts)
+    status.processing = False
+    status.website = website
+    status.last_activity = datetime.now().isoformat()
+    
+    # এই ওয়েবসাইটটি enabled websites-এ যোগ করুন যদি না থাকে
+    if website not in status.enabled_websites:
+        status.enabled_websites.append(website)
+    
+    await multi_account_manager.save_status(user_id, status)
+    
+    await update.message.reply_text(
+        f"✅ Multi-Account System Enabled!\n"
+        f"📊 Total Accounts: {len(accounts)}\n"
+        f"🌐 Website: {website}\n\n"
+        f"Now use 'Link WhatsApp' to start automatic processing.",
+        reply_markup=get_main_keyboard(website, user_id)
+    )
+    
+    # প্রথম অ্যাকাউন্ট লগইন করুন
+    await auto_login_next_account(update, context, user_id, website)
+    return True
+
+
 async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     phone = update.message.text.strip()
@@ -2047,6 +2563,11 @@ async def process_phone_number(update: Update, context: ContextTypes.DEFAULT_TYP
     # Multi-Account status চেক
     status = await multi_account_manager.load_status(user_id)
     multi_account_linking = context.user_data.get('multi_account_linking', False)
+    
+    # Multi-Website Round-Robin চেক
+    if status.round_robin_mode and status.enabled_websites:
+        await start_round_robin_processing(update, context, user_id, phone)
+        return
     
     if not device_manager.exists(device_name):
         await update.message.reply_text("❌ Please set user agent first using 'Set User Agent'.", reply_markup=get_main_keyboard(selected_website, user_id))
