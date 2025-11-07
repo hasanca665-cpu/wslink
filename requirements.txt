@@ -4,3 +4,4 @@ aiofiles
 pycryptodome
 pytz
 requests
+flask
