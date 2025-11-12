@@ -7,7 +7,6 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
-import threading
 
 # Flask app for Render
 app = Flask(__name__)
@@ -15,15 +14,6 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "🤖 Telegram Bot is running!", 200
-
-@app.route('/health')
-def health():
-    return "✅ Bot is healthy!", 200
-
-def run_flask():
-    """Run Flask app with proper port binding for Render"""
-    port = int(os.environ.get("PORT", 10000))
-    app.run(host="0.0.0.0", port=port, debug=False)
 
 # Keep the rest of your existing code exactly the same
 class SMS323Automation:
@@ -399,9 +389,8 @@ class SMS323Automation:
         except Exception:
             message += "❌ Bank ID error\n"
             return None, message
-    
-    def submit_withdraw(self, bank_id, amount, username):
-    """Submit withdraw - FIXED VERSION"""
+def submit_withdraw(self, bank_id, amount, username):
+    """Submit withdraw - FAST VERSION"""
     message = f"🚀 Submitting withdraw: {amount} points...\n"
     
     data = {'score': amount, 'bank_id': bank_id}
@@ -409,7 +398,12 @@ class SMS323Automation:
     try:
         response = self.session.post(f"{self.current_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
         
-        if response is not None and response.status_code == 200:
+        # Check if response is None or empty
+        if response is None:
+            message += "❌ No response from server\n"
+            return False, message
+            
+        if response.status_code == 200:
             try:
                 result = response.json()
                 if result.get('code') == 1:
@@ -428,8 +422,7 @@ class SMS323Automation:
                 message += "❌ Invalid JSON response from server\n"
                 return False, message
         else:
-            status_code = response.status_code if response else 'No response'
-            message += f"❌ Withdraw submit failed - Status: {status_code}\n"
+            message += f"❌ Withdraw submit failed with status code: {response.status_code}\n"
             return False, message
             
     except requests.exceptions.Timeout:
@@ -1394,8 +1387,13 @@ async def send_long_message(context, chat_id, text):
             await context.bot.send_message(chat_id, part)
             time.sleep(0.5)
 
-def run_bot():
-    """Run Telegram bot"""
+def run_flask():
+    """Run Flask app"""
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
+def main():
+    """Start the bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -1403,21 +1401,16 @@ def run_bot():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("🤖 Telegram Bot is starting...")
-    application.run_polling()
-
-def main():
-    """Start both Flask and Telegram bot"""
-    print("🚀 Starting Flask server and Telegram Bot...")
+    # Start the Bot and Flask
+    print("Bot is running...")
     
-    # Start Flask in a separate thread
+    # Run both in parallel (for Render deployment)
+    import threading
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Start Telegram bot in main thread
-    time.sleep(2)  # Give Flask time to start
-    run_bot()
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
