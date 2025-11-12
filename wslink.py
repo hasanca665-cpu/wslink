@@ -39,6 +39,7 @@ class SMS323Automation:
         self.session = requests.Session()
         self.update_headers()
         self.user_states = {}
+        self.user_websites = {}
         self.processing_results = {}
         self.failed_withdraws = {}
         self.bot_submitted_orders = set()
@@ -84,9 +85,9 @@ class SMS323Automation:
                 return json.load(f)
         return []
     
-    def update_headers(self):
+    def update_headers(self, current_website):
         """Update headers"""
-        if self.current_website:
+        if current_website:
             self.session.headers.update({
                 'User-Agent': 'Mozilla/5.0 (Linux; Android 16; SM-M356B Build/BP2A.250605.031.A3) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.7390.122 Mobile Safari/537.36',
                 'Accept': 'application/json, text/plain, */*',
@@ -96,12 +97,12 @@ class SMS323Automation:
                 'accept-language': 'en',
                 'sec-ch-ua': '"Android WebView";v="141", "Not?A_Brand";v="8", "Chromium";v="141"',
                 'sec-ch-ua-mobile': '?1',
-                'origin': self.current_website['origin'],
+                'origin': current_website['origin'],
                 'x-requested-with': 'mark.via.gp',
                 'sec-fetch-site': 'cross-site',
                 'sec-fetch-mode': 'cors',
                 'sec-fetch-dest': 'empty',
-                'referer': self.current_website['referer'],
+                'referer': current_website['referer'],
                 'priority': 'u=1, i'
             })
     
@@ -166,8 +167,9 @@ class SMS323Automation:
             message = "🌐 Website Management\n"
             message += "=" * 40 + "\n"
             
+            user_current = self.user_websites.get(user_id, None)
             for i, website in enumerate(websites, 1):
-                current_indicator = " ✅" if website == self.current_website else ""
+                current_indicator = " ✅" if website == user_current else ""
                 platform_id = website.get('platform_id', 22)
                 message += f"{i}. {website['name']} - {website['base_url']} (Platform: {platform_id}){current_indicator}\n"
             return message
@@ -202,11 +204,10 @@ class SMS323Automation:
             try:
                 choice = int(data) - 1
                 if 0 <= choice < len(websites):
-                    self.current_website = websites[choice]
-                    self.withdraw_platform_id = self.current_website.get('platform_id', 22)
-                    self.update_headers()
-                    platform_id = self.current_website.get('platform_id', 22)
-                    return f"✅ Current website: {self.current_website['name']} (Platform ID: {platform_id})"
+                    self.user_websites[user_id] = websites[choice]
+                    self.withdraw_platform_id = self.user_websites[user_id].get('platform_id', 22)
+                    platform_id = self.user_websites[user_id].get('platform_id', 22)
+                    return f"✅ Current website: {self.user_websites[user_id]['name']} (Platform ID: {platform_id})"
                 else:
                     return "❌ Wrong selection!"
             except ValueError:
@@ -222,7 +223,7 @@ class SMS323Automation:
                 if 0 <= choice < len(websites):
                     website_to_delete = websites[choice]
                     
-                    if website_to_delete == self.current_website:
+                    if website_to_delete == self.user_websites.get(user_id):
                         return "❌ Cannot delete current website!"
                     
                     websites.remove(website_to_delete)
@@ -261,21 +262,21 @@ class SMS323Automation:
             return f"💾 Total {len(accounts)} accounts saved\n🔄 Old data cleared automatically!"
         return "❌ No valid accounts found!"
     
-    def login(self, username, password):
+    def login(self, username, password, session, current_website):
         """Login function - FAST VERSION"""
         message = f"🔐 {username} - Processing...\n"
         
         data = {'username': username, 'password': password}
         
         try:
-            response = self.session.post(f"{self.current_website['base_url']}/api/user/signIn", data=data, timeout=10)
+            response = session.post(f"{current_website['base_url']}/api/user/signIn", data=data, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('code') == 1:
                     token = result.get('data', {}).get('token')
                     if token:
-                        self.session.headers.update({'token': token})
+                        session.headers.update({'token': token})
                         message += ""
                         return True, message
             message += "❌ Login failed\n"
@@ -285,12 +286,12 @@ class SMS323Automation:
             message += f"❌ Login error: {str(e)}\n"
             return False, message
     
-    def get_user_info(self):
+    def get_user_info(self, session, current_website):
         """Get user information - FAST VERSION"""
         message = ""
         
         try:
-            response = self.session.get(f"{self.current_website['base_url']}/api/user/userInfo", timeout=10)
+            response = session.get(f"{current_website['base_url']}/api/user/userInfo", timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
@@ -307,7 +308,7 @@ class SMS323Automation:
             message += "❌ Balance check error\n"
             return 0, message
     
-    def add_bank_account(self, username, password):
+    def add_bank_account(self, username, password, session, current_website):
         """Add bank account - 100% GOMONEY ONLY"""
         message = "💳 Setting up bank account...\n"
         
@@ -315,7 +316,7 @@ class SMS323Automation:
         bank_name = "GOMONEY"
         selected_name = "Molo"
         
-        existing_bank_id = self.check_existing_banks_fast()
+        existing_bank_id = self.check_existing_banks_fast(session, current_website)
         if existing_bank_id:
             message += f"✅ Bank already exists: {bank_name}\n"
             return True, message
@@ -332,7 +333,7 @@ class SMS323Automation:
         message += f"📝 Setting Bank: {selected_name} - {bank_name}\n"
         
         try:
-            response = self.session.post(f"{self.current_website['base_url']}/api/user_bank/add", data=data, timeout=10)
+            response = session.post(f"{current_website['base_url']}/api/user_bank/add", data=data, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
@@ -349,10 +350,10 @@ class SMS323Automation:
             message += f"❌ Bank setup error: {str(e)}\n"
             return False, message
     
-    def check_existing_banks_fast(self):
+    def check_existing_banks_fast(self, session, current_website):
         """Check existing banks quickly"""
         try:
-            response = self.session.get(f"{self.current_website['base_url']}/api/user_bank/bankList", timeout=10)
+            response = session.get(f"{current_website['base_url']}/api/user_bank/bankList", timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
@@ -365,39 +366,38 @@ class SMS323Automation:
             pass
         return None
     
-    def get_bank_id(self):
-        """Get bank ID - FAST VERSION"""
+    def get_bank_id(self, session, current_website):
+        """Get bank ID - FAST VERSION - GOMONEY ONLY"""
         message = "🔍 Finding bank ID...\n"
         
         try:
-            response = self.session.get(f"{self.current_website['base_url']}/api/user_bank/bankList", timeout=10)
+            response = session.get(f"{current_website['base_url']}/api/user_bank/bankList", timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
                 if result.get('code') == 1:
                     banks = result.get('data', [])
-                    if banks:
-                        bank = banks[0]
-                        bank_id = bank.get('id')
-                        bank_name = bank.get('bank_name')
-                        bank_number = bank.get('bank_card')
-                        message += f"✅ Using Bank: {bank_name} - ID: {bank_id}\n"
-                        return bank_id, message
-            message += "❌ Bank ID not found\n"
+                    for bank in banks:
+                        if bank.get('bank_name') == 'GOMONEY' and bank.get('bank_card') == '8504484734':
+                            bank_id = bank.get('id')
+                            bank_name = bank.get('bank_name')
+                            message += f"✅ Using Bank: {bank_name} - ID: {bank_id}\n"
+                            return bank_id, message
+            message += "❌ GOMONEY Bank ID not found\n"
             return None, message
                 
         except Exception:
             message += "❌ Bank ID error\n"
             return None, message
     
-    def submit_withdraw(self, bank_id, amount, username):
+    def submit_withdraw(self, bank_id, amount, username, session, current_website):
         """Submit withdraw - FAST VERSION"""
         message = f"🚀 Submitting withdraw: {amount} points...\n"
         
         data = {'score': amount, 'bank_id': bank_id}
         
         try:
-            response = self.session.post(f"{self.current_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
+            response = session.post(f"{current_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
@@ -419,7 +419,7 @@ class SMS323Automation:
             message += f"❌ Withdraw submit error: {str(e)}\n"
             return False, message
     
-    def check_withdraw_status(self, username):
+    def check_withdraw_status(self, username, session, current_website):
         """Check withdraw status - ONLY BOT-SUBMITTED ORDERS"""
         message = f"📊 {username} - Checking withdraw status...\n"
         
@@ -432,7 +432,7 @@ class SMS323Automation:
         }
         
         try:
-            response = self.session.post(f"{self.current_website['base_url']}/api/withdraw/orderList", data=data, timeout=10)
+            response = session.post(f"{current_website['base_url']}/api/withdraw/orderList", data=data, timeout=10)
             
             if response.status_code == 200:
                 result = response.json()
@@ -587,13 +587,14 @@ class SMS323Automation:
             await update.callback_query.edit_message_text("❌ No accounts found! Please add accounts first.", reply_markup=reply_markup)
             return
         
-        if not self.current_website:
+        user_id = update.callback_query.from_user.id
+        current_website = self.user_websites.get(user_id, None)
+        if not current_website:
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
-        user_id = update.callback_query.from_user.id
         chat_id = update.callback_query.message.chat_id
         
         # Get user info for forwarding
@@ -620,13 +621,16 @@ class SMS323Automation:
         for i, account in enumerate(accounts, 1):
             username = account["username"]
             password = account["password"]
+            session = requests.Session()
+            self.update_headers(current_website)
+            session.headers = self.session.headers.copy()
             
             # Send individual account processing message
             account_message = f"⚡ Account {i}/{len(accounts)}: {username}\n"
             account_message += "-" * 30 + "\n"
             
             # Login
-            login_success, login_msg = self.login(username, password)
+            login_success, login_msg = self.login(username, password, session, current_website)
             account_message += login_msg
             
             if not login_success:
@@ -638,7 +642,7 @@ class SMS323Automation:
                 continue
             
             # Balance check
-            balance, balance_msg = self.get_user_info()
+            balance, balance_msg = self.get_user_info(session, current_website)
             account_message += balance_msg
             
             if balance <= 200:
@@ -654,7 +658,7 @@ class SMS323Automation:
             account_message += f"📊 Withdraw amount: {withdraw_amount} points\n"
             
             # Bank setup
-            bank_success, bank_msg = self.add_bank_account(username, password)
+            bank_success, bank_msg = self.add_bank_account(username, password, session, current_website)
             account_message += bank_msg
             if not bank_success:
                 failed_details.append(f"🏦 {username} - Bank setup failed")
@@ -665,7 +669,7 @@ class SMS323Automation:
                 continue
             
             # Get bank ID
-            bank_id, bank_id_msg = self.get_bank_id()
+            bank_id, bank_id_msg = self.get_bank_id(session, current_website)
             account_message += bank_id_msg
             if not bank_id:
                 failed_details.append(f"🏦 {username} - Bank ID not found")
@@ -676,7 +680,7 @@ class SMS323Automation:
                 continue
             
             # Submit withdraw
-            withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, withdraw_amount, username)
+            withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, withdraw_amount, username, session, current_website)
             account_message += withdraw_msg
             
             if withdraw_success:
@@ -729,7 +733,7 @@ class SMS323Automation:
         if failed_accounts:
             await self.send_failed_accounts_page(context, chat_id, user_id, 1)
         else:
-            await self.show_main_menu_after_processing(context, chat_id)
+            await self.show_main_menu_after_processing(context, chat_id, user_id)
     
     async def send_failed_accounts_page(self, context, chat_id, user_id, page):
         """Send a page of failed accounts"""
@@ -781,13 +785,14 @@ class SMS323Automation:
             await update.callback_query.edit_message_text("❌ No accounts found!", reply_markup=reply_markup)
             return
         
-        if not self.current_website:
+        user_id = update.callback_query.from_user.id
+        current_website = self.user_websites.get(user_id, None)
+        if not current_website:
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
-        user_id = update.callback_query.from_user.id
         chat_id = update.callback_query.message.chat_id
         
         # Get user info for forwarding
@@ -810,12 +815,15 @@ class SMS323Automation:
         for i, account in enumerate(accounts, 1):
             username = account["username"]
             password = account["password"]
+            session = requests.Session()
+            self.update_headers(current_website)
+            session.headers = self.session.headers.copy()
             
             # Send individual account status message
             account_message = f"\n{i}. {username}\n"
             account_message += "-" * 20 + "\n"
             
-            login_success, login_msg = self.login(username, password)
+            login_success, login_msg = self.login(username, password, session, current_website)
             account_message += login_msg
             
             if not login_success:
@@ -826,7 +834,7 @@ class SMS323Automation:
                 await self.forward_to_group(context, account_message, user_info)
                 continue
             
-            status_success, status_msg = self.check_withdraw_status(username)
+            status_success, status_msg = self.check_withdraw_status(username, session, current_website)
             account_message += status_msg
             
             # Extract failed withdraws from status message
@@ -903,7 +911,7 @@ class SMS323Automation:
         if total_failed > 0:
             await self.send_failed_withdraws_page(context, chat_id, user_id, 1)
         else:
-            await self.show_main_menu_after_processing(context, chat_id)
+            await self.show_main_menu_after_processing(context, chat_id, user_id)
     
     async def send_failed_withdraws_page(self, context, chat_id, user_id, page):
         """Send a page of failed withdraws with re-submit options"""
@@ -973,7 +981,8 @@ class SMS323Automation:
             await query.edit_message_text("❌ No failed withdraws found!", reply_markup=reply_markup)
             return
         
-        if not self.current_website:
+        current_website = self.user_websites.get(user_id, None)
+        if not current_website:
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
@@ -1010,21 +1019,24 @@ class SMS323Automation:
                 continue
             
             password = account['password']
+            session = requests.Session()
+            self.update_headers(current_website)
+            session.headers = self.session.headers.copy()
             
             # Login
-            login_success, login_msg = self.login(username, password)
+            login_success, login_msg = self.login(username, password, session, current_website)
             if not login_success:
                 resubmit_details.append(f"❌ {username} - Login failed")
                 continue
             
             # Get bank ID
-            bank_id, bank_id_msg = self.get_bank_id()
+            bank_id, bank_id_msg = self.get_bank_id(session, current_website)
             if not bank_id:
                 resubmit_details.append(f"❌ {username} - Bank ID not found")
                 continue
             
             # Submit withdraw
-            withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, amount, username)
+            withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, amount, username, session, current_website)
             
             if withdraw_success:
                 successful_resubmits += 1
@@ -1051,7 +1063,7 @@ class SMS323Automation:
         # Show failed withdraws page again
         await self.send_failed_withdraws_page(context, chat_id, user_id, page)
     
-    def show_status_summary(self, page=1):
+    def show_status_summary(self, user_id, page=1):
         """Show status summary with pagination - ONLY BOT ORDERS"""
         status_data = self.load_withdraw_status()
         
@@ -1132,7 +1144,7 @@ class SMS323Automation:
         
         return message
     
-    async def show_main_menu_after_processing(self, context, chat_id):
+    async def show_main_menu_after_processing(self, context, chat_id, user_id):
         """Show main menu after processing is complete"""
         keyboard = [
             [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
@@ -1144,10 +1156,11 @@ class SMS323Automation:
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        platform_id = self.current_website.get('platform_id', 22) if self.current_website else 22
+        current_website = self.user_websites.get(user_id, None)
+        platform_id = current_website.get('platform_id', 22) if current_website else 22
         
         welcome_text = f"""🎯 Automation Withdraw System
-🌐 Current Website: {self.current_website['name'] if self.current_website else 'N/A'}
+🌐 Current Website: {current_website['name'] if current_website else 'N/A'}
 🏦 Bank: GOMONEY
 
 Select an option:"""
@@ -1160,6 +1173,7 @@ BOT_TOKEN = "7390288812:AAGsGZriy4dprHYmQoRUZltMCmvTUitpz4I"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message with main menu"""
+    user_id = update.message.from_user.id
     keyboard = [
         [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
         [InlineKeyboardButton("🚀 Withdraw all accounts", callback_data="process_all")],
@@ -1170,10 +1184,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    platform_id = automation.current_website.get('platform_id', 22) if automation.current_website else 22
+    current_website = automation.user_websites.get(user_id, None)
+    platform_id = current_website.get('platform_id', 22) if current_website else 22
     
     welcome_text = f"""🎯 Automation Withdraw System
-🌐 Current Website: {automation.current_website['name'] if automation.current_website else 'N/A'}
+🌐 Current Website: {current_website['name'] if current_website else 'N/A'}
 🏦 Bank: GOMONEY
 
 Select an option:"""
@@ -1182,6 +1197,7 @@ Select an option:"""
 
 async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send main menu on /menu command"""
+    user_id = update.message.from_user.id
     keyboard = [
         [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
         [InlineKeyboardButton("🚀 Withdraw all accounts", callback_data="process_all")],
@@ -1192,10 +1208,11 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    platform_id = automation.current_website.get('platform_id', 22) if automation.current_website else 22
+    current_website = automation.user_websites.get(user_id, None)
+    platform_id = current_website.get('platform_id', 22) if current_website else 22
     
     welcome_text = f"""🎯 Automation Withdraw System
-🌐 Current Website: {automation.current_website['name'] if automation.current_website else 'N/A'}
+🌐 Current Website: {current_website['name'] if current_website else 'N/A'}
 🏦 Bank: GOMONEY
 
 Select an option:"""
@@ -1231,8 +1248,8 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await automation.check_all_status(update, context)
     
     elif query.data == "status_summary":
-        result = automation.show_status_summary(page=1)
-        await send_long_message(context, query.message.chat_id, result)
+        result = automation.show_status_summary(user_id, page=1)
+        await send_long_message(context, query.message.chat_id, result, user_id)
         
         # Add pagination buttons if needed
         status_data = automation.load_withdraw_status()
@@ -1245,12 +1262,12 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(query.message.chat_id, "Navigate to next page:", reply_markup=reply_markup)
         else:
-            await automation.show_main_menu_after_processing(context, query.message.chat_id)
+            await automation.show_main_menu_after_processing(context, query.message.chat_id, user_id)
     
     elif query.data.startswith("status_page_"):
         page = int(query.data.split("_")[2])
-        result = automation.show_status_summary(page=page)
-        await send_long_message(context, query.message.chat_id, result)
+        result = automation.show_status_summary(user_id, page=page)
+        await send_long_message(context, query.message.chat_id, result, user_id)
         
         # Pagination buttons
         status_data = automation.load_withdraw_status()
@@ -1294,7 +1311,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(result, reply_markup=reply_markup)
-            await automation.show_main_menu_after_processing(context, query.message.chat_id)
+            await automation.show_main_menu_after_processing(context, query.message.chat_id, user_id)
         else:
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1330,10 +1347,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(result, reply_markup=reply_markup)
-        await automation.show_main_menu_after_processing(context, query.message.chat_id)
+        await automation.show_main_menu_after_processing(context, query.message.chat_id, user_id)
     
     elif query.data == "main_menu":
-        await automation.show_main_menu_after_processing(context, query.message.chat_id)
+        await automation.show_main_menu_after_processing(context, query.message.chat_id, user_id)
     
     elif query.data.startswith("website_"):
         action = query.data.split("_")[1]
@@ -1350,7 +1367,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await query.edit_message_text("❌ Only admin can add websites!", reply_markup=reply_markup)
         elif action == "back":
-            await automation.show_main_menu_after_processing(context, query.message.chat_id)
+            await automation.show_main_menu_after_processing(context, query.message.chat_id, user_id)
 
 async def show_website_management(query, context, user_id):
     """Show website management options"""
@@ -1404,7 +1421,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Added accounts:\n{text}\n\n{result}", user_info)
-            await automation.show_main_menu_after_processing(context, update.message.chat_id)
+            await automation.show_main_menu_after_processing(context, update.message.chat_id, user_id)
         
         elif state == "waiting_for_website_name":
             automation.user_states[user_id] = {"state": "waiting_for_website_url", "name": text}
@@ -1447,7 +1464,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Platform ID: {platform_id}\n\n{result}", user_info)
-            await automation.show_main_menu_after_processing(context, update.message.chat_id)
+            await automation.show_main_menu_after_processing(context, update.message.chat_id, user_id)
         
         elif state == "waiting_for_website_delete":
             del automation.user_states[user_id]
@@ -1456,14 +1473,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Delete website: {text}\n\n{result}", user_info)
-            await automation.show_main_menu_after_processing(context, update.message.chat_id)
+            await automation.show_main_menu_after_processing(context, update.message.chat_id, user_id)
     
     else:
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Please use the menu buttons to interact with the bot.", reply_markup=reply_markup)
 
-async def send_long_message(context, chat_id, text):
+async def send_long_message(context, chat_id, text, user_id):
     """Send long messages by splitting them"""
     if len(text) <= 4096:
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
