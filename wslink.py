@@ -1,12 +1,21 @@
-import os
 import requests
 import json
 import time
 import random
+import os
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from flask import Flask
 
+# Flask app for Render
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "🤖 Telegram Bot is running!", 200
+
+# Keep the rest of your existing code exactly the same
 class SMS323Automation:
     def __init__(self):
         self.accounts_file = "accounts.json"
@@ -14,19 +23,7 @@ class SMS323Automation:
         self.websites_file = "websites.json"
         self.settings_file = "settings.json"
         self.current_website = None
-        self.withdraw_platform_id = 22
-        
-        # Environment variables থেকে টোকেন নিন
-        self.bot_token = os.getenv('BOT_TOKEN')
-        self.port = int(os.getenv('PORT', 10000))
-        self.webhook_url = os.getenv('WEBHOOK_URL')
-        
-        self.admin_id = 5624278091
-        self.forward_group_id = -1003349774475
-        
-        if not self.bot_token:
-            raise ValueError("❌ BOT_TOKEN environment variable is required!")
-            
+        self.withdraw_platform_id = 22  # Default platform ID
         self.load_settings()
         self.load_websites()
         self.session = requests.Session()
@@ -35,6 +32,8 @@ class SMS323Automation:
         self.processing_results = {}
         self.failed_withdraws = {}
         self.bot_submitted_orders = set()
+        self.admin_id = 5624278091  # Admin user ID
+        self.forward_group_id = -1003349774475  # Forward group chat ID
     
     def load_settings(self):
         """Load settings including platform ID"""
@@ -1112,6 +1111,7 @@ Select an option:"""
 
 # Global automation instance
 automation = SMS323Automation()
+BOT_TOKEN = "7390288812:AAGsGZriy4dprHYmQoRUZltMCmvTUitpz4I"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message with main menu"""
@@ -1371,40 +1371,30 @@ async def send_long_message(context, chat_id, text):
             await context.bot.send_message(chat_id, part)
             time.sleep(0.5)
 
+def run_flask():
+    """Run Flask app"""
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
+
 def main():
-    """Start the bot with webhook for Render"""
-    try:
-        automation = SMS323Automation()
-        
-        # Application তৈরি করুন
-        application = Application.builder().token(automation.bot_token).build()
-        
-        # Add handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CallbackQueryHandler(button_handler))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-        
-        # Render-specific configuration
-        if automation.webhook_url:
-            # Webhook mode for production
-            print("🚀 Starting bot in WEBHOOK mode...")
-            application.run_webhook(
-                listen="0.0.0.0",
-                port=automation.port,
-                url_path=automation.bot_token,
-                webhook_url=f"{automation.webhook_url}/{automation.bot_token}"
-            )
-        else:
-            # Polling mode for development
-            print("🔍 Starting bot in POLLING mode...")
-            application.run_polling()
-            
-    except Exception as e:
-        print(f"❌ Bot startup failed: {e}")
-        # Exit gracefully for Render to restart
-        time.sleep(5)
-        exit(1)
+    """Start the bot"""
+    application = Application.builder().token(BOT_TOKEN).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CallbackQueryHandler(button_handler))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    
+    # Start the Bot and Flask
+    print("Bot is running...")
+    
+    # Run both in parallel (for Render deployment)
+    import threading
+    flask_thread = threading.Thread(target=run_flask)
+    flask_thread.daemon = True
+    flask_thread.start()
+    
+    application.run_polling()
 
 if __name__ == "__main__":
     main()
-    
