@@ -7,6 +7,7 @@ from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
+import threading
 
 # Flask app for Render
 app = Flask(__name__)
@@ -14,6 +15,15 @@ app = Flask(__name__)
 @app.route('/')
 def home():
     return "🤖 Telegram Bot is running!", 200
+
+@app.route('/health')
+def health():
+    return "✅ Bot is healthy!", 200
+
+def run_flask():
+    """Run Flask app with proper port binding for Render"""
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port, debug=False)
 
 # Keep the rest of your existing code exactly the same
 class SMS323Automation:
@@ -1371,13 +1381,8 @@ async def send_long_message(context, chat_id, text):
             await context.bot.send_message(chat_id, part)
             time.sleep(0.5)
 
-def run_flask():
-    """Run Flask app"""
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
-
-def main():
-    """Start the bot"""
+def run_bot():
+    """Run Telegram bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
     # Add handlers
@@ -1385,16 +1390,21 @@ def main():
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    # Start the Bot and Flask
-    print("Bot is running...")
+    print("🤖 Telegram Bot is starting...")
+    application.run_polling()
+
+def main():
+    """Start both Flask and Telegram bot"""
+    print("🚀 Starting Flask server and Telegram Bot...")
     
-    # Run both in parallel (for Render deployment)
-    import threading
+    # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    application.run_polling()
+    # Start Telegram bot in main thread
+    time.sleep(2)  # Give Flask time to start
+    run_bot()
 
 if __name__ == "__main__":
     main()
