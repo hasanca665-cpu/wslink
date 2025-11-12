@@ -401,15 +401,16 @@ class SMS323Automation:
             return None, message
     
     def submit_withdraw(self, bank_id, amount, username):
-        """Submit withdraw - FAST VERSION"""
-        message = f"🚀 Submitting withdraw: {amount} points...\n"
+    """Submit withdraw - FIXED VERSION"""
+    message = f"🚀 Submitting withdraw: {amount} points...\n"
+    
+    data = {'score': amount, 'bank_id': bank_id}
+    
+    try:
+        response = self.session.post(f"{self.current_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
         
-        data = {'score': amount, 'bank_id': bank_id}
-        
-        try:
-            response = self.session.post(f"{self.current_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
-            
-            if response.status_code == 200:
+        if response is not None and response.status_code == 200:
+            try:
                 result = response.json()
                 if result.get('code') == 1:
                     # Store the order ID for tracking
@@ -420,14 +421,26 @@ class SMS323Automation:
                     message += "🎉 Withdraw submitted successfully!\n"
                     return True, message
                 else:
-                    message += f"❌ Withdraw submit failed: {result.get('msg', 'Unknown error')}\n"
+                    error_msg = result.get('msg', 'Unknown error')
+                    message += f"❌ Withdraw submit failed: {error_msg}\n"
                     return False, message
-            message += "❌ Withdraw submit failed\n"
+            except json.JSONDecodeError:
+                message += "❌ Invalid JSON response from server\n"
+                return False, message
+        else:
+            status_code = response.status_code if response else 'No response'
+            message += f"❌ Withdraw submit failed - Status: {status_code}\n"
             return False, message
-                
-        except Exception as e:
-            message += f"❌ Withdraw submit error: {str(e)}\n"
-            return False, message
+            
+    except requests.exceptions.Timeout:
+        message += "❌ Withdraw submit timeout\n"
+        return False, message
+    except requests.exceptions.ConnectionError:
+        message += "❌ Connection error during withdraw submit\n"
+        return False, message
+    except Exception as e:
+        message += f"❌ Withdraw submit error: {str(e)}\n"
+        return False, message
     
     def check_withdraw_status(self, username):
         """Check withdraw status - ONLY BOT-SUBMITTED ORDERS"""
