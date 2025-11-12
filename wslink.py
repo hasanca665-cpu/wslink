@@ -71,16 +71,6 @@ class SMS323Automation:
                     self.current_website = websites[0]
                     # Set platform ID from current website
                     self.withdraw_platform_id = self.current_website.get('platform_id', 22)
-        else:
-            # Default website
-            self.current_website = {
-                "name": "DIY22",
-                "base_url": "https://diy22.club",
-                "origin": "https://diy22.net",
-                "referer": "https://diy22.net",
-                "platform_id": 22
-            }
-            self.save_websites([self.current_website])
     
     def save_websites(self, websites):
         """Save websites"""
@@ -597,6 +587,12 @@ class SMS323Automation:
             await update.callback_query.edit_message_text("❌ No accounts found! Please add accounts first.", reply_markup=reply_markup)
             return
         
+        if not self.current_website:
+            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
+            return
+        
         user_id = update.callback_query.from_user.id
         chat_id = update.callback_query.message.chat_id
         
@@ -785,6 +781,12 @@ class SMS323Automation:
             await update.callback_query.edit_message_text("❌ No accounts found!", reply_markup=reply_markup)
             return
         
+        if not self.current_website:
+            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
+            return
+        
         user_id = update.callback_query.from_user.id
         chat_id = update.callback_query.message.chat_id
         
@@ -969,6 +971,12 @@ class SMS323Automation:
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.answer("❌ No failed withdraws found!")
             await query.edit_message_text("❌ No failed withdraws found!", reply_markup=reply_markup)
+            return
+        
+        if not self.current_website:
+            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
         if page is None:
