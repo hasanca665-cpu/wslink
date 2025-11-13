@@ -8,6 +8,8 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
 import threading
+import pandas as pd
+from io import BytesIO
 
 # Flask app for Render
 app = Flask(__name__)
@@ -194,7 +196,7 @@ class SMS323Automation:
         
         if action == "list":
             message = "🌐 Website Management\n"
-            message += "=" * 40 + "\n"
+            message += "=" * 20 + "\n"
             
             for i, website in enumerate(websites, 1):
                 user_website = self.get_user_website(user_id)
@@ -424,56 +426,56 @@ class SMS323Automation:
             pass
         return None
     
-def get_bank_id(self, user_id):
-    """Get bank ID - FORCE GOMONEY ONLY"""
-    message = "🔍 Finding bank ID...\n"
-    
-    # Use user-specific website
-    user_website = self.get_user_website(user_id)
-    if not user_website:
-        message += "❌ No website selected!\n"
-        return None, message
-    
-    try:
-        response = self.session.get(f"{user_website['base_url']}/api/user_bank/bankList", timeout=10)
+    def get_bank_id(self, user_id):
+        """Get bank ID - FORCE GOMONEY ONLY"""
+        message = "🔍 Finding bank ID...\n"
         
-        if response.status_code == 200:
-            result = response.json()
-            if result.get('code') == 1:
-                banks = result.get('data', [])
-                
-                # FORCE GOMONEY BANK ONLY - Find GOMONEY bank specifically
-                gomoney_bank = None
-                for bank in banks:
-                    if (bank.get('bank_name') == 'GOMONEY' and 
-                        bank.get('bank_card') == '8504484734'):
-                        gomoney_bank = bank
-                        break
-                
-                if gomoney_bank:
-                    bank_id = gomoney_bank.get('id')
-                    bank_name = gomoney_bank.get('bank_name')
-                    bank_number = gomoney_bank.get('bank_card')
-                    message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
-                    return bank_id, message
-                else:
-                    message += "❌ GOMONEY bank not found in bank list\n"
-                    # If GOMONEY not found, try to find any bank with GOMONEY name
-                    for bank in banks:
-                        if bank.get('bank_name') == 'GOMONEY':
-                            bank_id = bank.get('id')
-                            bank_name = bank.get('bank_name')
-                            message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
-                            return bank_id, message
-                    
-                    message += "❌ No GOMONEY bank available\n"
-                    return None, message
-        message += "❌ Bank ID not found\n"
-        return None, message
+        # Use user-specific website
+        user_website = self.get_user_website(user_id)
+        if not user_website:
+            message += "❌ No website selected!\n"
+            return None, message
+        
+        try:
+            response = self.session.get(f"{user_website['base_url']}/api/user_bank/bankList", timeout=10)
             
-    except Exception:
-        message += "❌ Bank ID error\n"
-        return None, message
+            if response.status_code == 200:
+                result = response.json()
+                if result.get('code') == 1:
+                    banks = result.get('data', [])
+                    
+                    # FORCE GOMONEY BANK ONLY - Find GOMONEY bank specifically
+                    gomoney_bank = None
+                    for bank in banks:
+                        if (bank.get('bank_name') == 'GOMONEY' and 
+                            bank.get('bank_card') == '8504484734'):
+                            gomoney_bank = bank
+                            break
+                    
+                    if gomoney_bank:
+                        bank_id = gomoney_bank.get('id')
+                        bank_name = gomoney_bank.get('bank_name')
+                        bank_number = gomoney_bank.get('bank_card')
+                        message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                        return bank_id, message
+                    else:
+                        message += "❌ GOMONEY bank not found in bank list\n"
+                        # If GOMONEY not found, try to find any bank with GOMONEY name
+                        for bank in banks:
+                            if bank.get('bank_name') == 'GOMONEY':
+                                bank_id = bank.get('id')
+                                bank_name = bank.get('bank_name')
+                                message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                                return bank_id, message
+                        
+                        message += "❌ No GOMONEY bank available\n"
+                        return None, message
+            message += "❌ Bank ID not found\n"
+            return None, message
+                
+        except Exception:
+            message += "❌ Bank ID error\n"
+            return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
         """Submit withdraw - FAST VERSION"""
@@ -674,6 +676,70 @@ def get_bank_id(self, user_id):
         
         self.save_withdraw_status(status_data)
     
+    def generate_excel_report(self):
+        """Generate Excel report in the specified format"""
+        status_data = self.load_withdraw_status()
+        
+        if not status_data:
+            return None, "❌ No status data available for Excel report"
+        
+        # Prepare data for Excel
+        excel_data = []
+        
+        for username, orders in status_data.items():
+            success_orders = [o for o in orders if o.get('status') == 'success']
+            failed_orders = [o for o in orders if o.get('status') == 'failed']
+            
+            # Get the most recent order for timestamp and bank name
+            recent_order = None
+            if orders:
+                recent_order = max(orders, key=lambda x: x.get('date', ''))
+            
+            # Extract prefix (first 3 digits of phone number)
+            prefix = username[:3] if len(username) >= 3 else username
+            
+            row = {
+                'Phone Number': username,
+                'Success Orders': len(success_orders),
+                'Failed Orders': len(failed_orders),
+                'Points': sum(order.get('amount', 0) for order in success_orders),
+                'Recent Activity': recent_order.get('bank_name', 'GOMONEY') if recent_order else 'GOMONEY',
+                'Timestamp': recent_order.get('date', '') if recent_order else '',
+                'Prefix': prefix
+            }
+            excel_data.append(row)
+        
+        # Create DataFrame
+        df = pd.DataFrame(excel_data)
+        
+        # Sort by Timestamp (newest first)
+        if not df.empty and 'Timestamp' in df.columns:
+            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
+            df = df.sort_values('Timestamp', ascending=False)
+            df['Timestamp'] = df['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        
+        # Create Excel file in memory
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, sheet_name='Withdraw Report', index=False)
+            
+            # Auto-adjust column widths
+            worksheet = writer.sheets['Withdraw Report']
+            for column in worksheet.columns:
+                max_length = 0
+                column_letter = column[0].column_letter
+                for cell in column:
+                    try:
+                        if len(str(cell.value)) > max_length:
+                            max_length = len(str(cell.value))
+                    except:
+                        pass
+                adjusted_width = (max_length + 2)
+                worksheet.column_dimensions[column_letter].width = adjusted_width
+        
+        output.seek(0)
+        return output, f"✅ Excel report generated with {len(excel_data)} accounts"
+    
     async def process_all_accounts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process all accounts with individual messages for each account"""
         accounts = self.load_accounts()
@@ -814,11 +880,11 @@ def get_bank_id(self, user_id):
         failed_accounts = results['failed_accounts']
         
         # Summary message
-        summary_message = f"\n🎊 {'='*40}\n"
+        summary_message = f"\n🎊 {'='*20}\n"
         summary_message += f"📈 Summary: {successful}/{total_accounts} accounts successful\n"
         summary_message += f"⏱️ Total time: {total_time:.2f} seconds\n"
         summary_message += f"🚀 Average: {total_time/total_accounts:.2f} seconds per account\n"
-        summary_message += f"{'='*40}"
+        summary_message += f"{'='*20}"
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -995,7 +1061,7 @@ def get_bank_id(self, user_id):
         """Send status summary with re-submit option"""
         summary_message = f"\n📋 Bot Status Check Complete!\n"
         summary_message += f"❌ Total Failed Withdraws Found: {total_failed}\n"
-        summary_message += "=" * 40
+        summary_message += "=" * 20
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1143,7 +1209,7 @@ def get_bank_id(self, user_id):
         # Send re-submit results
         result_message = f"🔄 Re-submit Results:\n"
         result_message += f"✅ Successful: {successful_resubmits}/{len(current_page_withdraws)}\n"
-        result_message += "=" * 40 + "\n"
+        result_message += "=" * 20 + "\n"
         
         for detail in resubmit_details:
             result_message += f"{detail}\n"
@@ -1335,8 +1401,22 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await automation.check_all_status(update, context)
     
     elif query.data == "status_summary":
+        # Show the normal status summary first
         result = automation.show_status_summary(page=1)
         await send_long_message(context, query.message.chat_id, result)
+        
+        # Generate and send Excel file
+        excel_file, excel_message = automation.generate_excel_report()
+        if excel_file:
+            # Send Excel file
+            await context.bot.send_document(
+                chat_id=query.message.chat_id,
+                document=excel_file,
+                filename=f"withdraw_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                caption=excel_message
+            )
+        else:
+            await context.bot.send_message(query.message.chat_id, excel_message)
         
         # Add pagination buttons if needed
         status_data = automation.load_withdraw_status()
