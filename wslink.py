@@ -3,12 +3,12 @@ import json
 import time
 import random
 import os
-import csv
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
 import threading
+import csv
 from io import StringIO, BytesIO
 
 # Flask app for Render
@@ -34,35 +34,19 @@ class SMS323Automation:
         self.websites_file = "websites.json"
         self.settings_file = "settings.json"
         self.user_websites_file = "user_websites.json"
-        self.bot_orders_file = "bot_orders.json"
         self.current_website = None
         self.withdraw_platform_id = 22
         self.load_settings()
         self.load_websites()
         self.load_user_websites()
-        self.load_bot_orders()
         self.session = requests.Session()
         self.update_headers()
         self.user_states = {}
         self.processing_results = {}
         self.failed_withdraws = {}
+        self.bot_submitted_orders = set()
         self.admin_id = 5624278091
         self.forward_group_id = -1003349774475
-    
-    def load_bot_orders(self):
-        """Load bot orders from file to persist across restarts"""
-        if os.path.exists(self.bot_orders_file):
-            with open(self.bot_orders_file, 'r') as f:
-                data = json.load(f)
-                self.bot_submitted_orders = set(data.get('orders', []))
-        else:
-            self.bot_submitted_orders = set()
-    
-    def save_bot_orders(self):
-        """Save bot orders to file"""
-        data = {'orders': list(self.bot_submitted_orders)}
-        with open(self.bot_orders_file, 'w') as f:
-            json.dump(data, f, indent=2)
     
     def load_user_websites(self):
         """Load user-specific website selections"""
@@ -179,14 +163,12 @@ class SMS323Automation:
         """Clear all data"""
         message = "🗑️ Clearing all data...\n"
         
-        files_to_clear = [self.accounts_file, self.withdraw_file, self.bot_orders_file]
+        files_to_clear = [self.accounts_file, self.withdraw_file]
         
         for file in files_to_clear:
             if os.path.exists(file):
                 os.remove(file)
                 message += f"✅ {file} deleted\n"
-        
-        self.bot_submitted_orders = set()
         
         message += "🎉 All data cleared!"
         return message
@@ -479,7 +461,7 @@ class SMS323Automation:
             return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
-        """Submit withdraw - FIXED ERROR HANDLING"""
+        """Submit withdraw - FIXED VERSION"""
         message = f"🚀 Submitting withdraw: {amount} points...\n"
         
         user_website = self.get_user_website(user_id)
@@ -492,54 +474,55 @@ class SMS323Automation:
         try:
             response = self.session.post(f"{user_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
             
-            if response is None:
-                message += "❌ No response from server - connection failed\n"
-                return False, message
-                
             if response.status_code == 200:
                 result = response.json()
-                
-                if result is None:
-                    message += "❌ Invalid response from server\n"
-                    return False, message
-                    
                 if result.get('code') == 1:
+                    # Store the order ID for tracking - FIXED: Check if data exists
                     order_data = result.get('data', {})
                     order_id = order_data.get('id')
-                    
                     if order_id:
-                        order_key = f"{username}_{order_id}"
-                        self.bot_submitted_orders.add(order_key)
-                        self.save_bot_orders()
-                        message += f"✅ Order tracked: {order_id}\n"
-                        message += "🎉 Withdraw submitted successfully!\n"
-                        return True, message
-                    else:
-                        backup_key = f"{username}_{amount}_{int(time.time())}"
-                        self.bot_submitted_orders.add(backup_key)
-                        self.save_bot_orders()
-                        message += "⚠️ Order submitted but ID not found - using backup tracking\n"
-                        message += "🎉 Withdraw submitted successfully!\n"
-                        return True, message
+                        self.bot_submitted_orders.add(order_id)
+                    
+                    # IMMEDIATELY SAVE THE WITHDRAW STATUS
+                    self.save_immediate_withdraw_status(username, amount, order_id)
+                    
+                    message += "🎉 Withdraw submitted successfully!\n"
+                    return True, message
                 else:
-                    error_msg = result.get('msg', 'Unknown error')
-                    message += f"❌ Withdraw submit failed: {error_msg}\n"
+                    message += f"❌ Withdraw submit failed: {result.get('msg', 'Unknown error')}\n"
                     return False, message
-            else:
-                message += f"❌ Withdraw submit failed - Status code: {response.status_code}\n"
-                try:
-                    error_text = response.text[:100]
-                    message += f"📋 Response: {error_text}\n"
-                except:
-                    message += "📋 No response text available\n"
-                return False, message
+            message += "❌ Withdraw submit failed\n"
+            return False, message
                 
         except Exception as e:
             message += f"❌ Withdraw submit error: {str(e)}\n"
             return False, message
     
+    def save_immediate_withdraw_status(self, username, amount, order_id=None):
+        """Immediately save withdraw status after successful submission"""
+        status_data = self.load_withdraw_status()
+        
+        if username not in status_data:
+            status_data[username] = []
+        
+        # Create new order entry
+        new_order = {
+            "order_id": order_id or f"temp_{int(time.time())}",
+            "order_no": order_id or f"temp_{int(time.time())}",
+            "amount": amount,
+            "bank_name": "GOMONEY",
+            "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "status": "pending"
+        }
+        
+        # Add to status data
+        status_data[username].append(new_order)
+        
+        # Save updated status
+        self.save_withdraw_status(status_data)
+    
     def check_withdraw_status(self, username, user_id):
-        """Check withdraw status - IMPROVED BOT ORDER TRACKING"""
+        """Check withdraw status - FIXED VERSION"""
         message = f"📊 {username} - Checking withdraw status...\n"
         
         user_website = self.get_user_website(user_id)
@@ -547,6 +530,11 @@ class SMS323Automation:
             message += "❌ No website selected!\n"
             return False, message
         
+        # First, load our saved status data
+        status_data = self.load_withdraw_status()
+        user_orders = status_data.get(username, [])
+        
+        # Then check actual API status
         data = {
             'page': 1,
             'size': 50,
@@ -561,82 +549,23 @@ class SMS323Automation:
             if response.status_code == 200:
                 result = response.json()
                 if result.get('code') == 1:
-                    orders = result.get('data', [])
+                    api_orders = result.get('data', [])
                     
-                    bot_orders = []
-                    all_orders_info = ""
+                    # Update our local status with API data
+                    updated_orders = self.update_orders_from_api(user_orders, api_orders)
+                    status_data[username] = updated_orders
+                    self.save_withdraw_status(status_data)
                     
-                    for order in orders:
-                        order_id = order.get('id')
-                        order_key = f"{username}_{order_id}"
-                        
-                        if order_key in self.bot_submitted_orders:
-                            bot_orders.append(order)
-                            all_orders_info += f"   ✅ BOT ORDER - ID: {order_id}, Amount: {order.get('score')}, Status: {order.get('status')}\n"
-                        else:
-                            all_orders_info += f"   👤 MANUAL ORDER - ID: {order_id}, Amount: {order.get('score')}, Status: {order.get('status')}\n"
+                    # Calculate totals from updated orders
+                    success_orders = [o for o in updated_orders if o.get('status') == 'success']
+                    pending_orders = [o for o in updated_orders if o.get('status') == 'pending']
+                    failed_orders = [o for o in updated_orders if o.get('status') == 'failed']
                     
-                    message += f"📦 Bot Orders Found: {len(bot_orders)}/{len(orders)}\n"
-                    message += f"🔍 Total orders in system: {len(orders)}\n"
+                    total_success = sum(order.get('amount', 0) for order in success_orders)
+                    total_pending = sum(order.get('amount', 0) for order in pending_orders)
+                    total_failed = sum(order.get('amount', 0) for order in failed_orders)
                     
-                    if orders:
-                        message += f"📋 All Orders Details:\n"
-                        message += all_orders_info
-                    
-                    success_orders = []
-                    pending_orders = []
-                    failed_orders = []
-                    
-                    for order in bot_orders:
-                        order_id = order.get('id')
-                        amount = order.get('score')
-                        status = order.get('status')
-                        order_no = order.get('order_no', '')
-                        bank_name = order.get('bank_name', 'GOMONEY')
-                        create_time = order.get('createtime2', 'Unknown')
-                        finish_time = order.get('finishtime', 0)
-                        
-                        order_date = create_time
-                        if finish_time:
-                            finish_date = datetime.fromtimestamp(finish_time).strftime('%Y-%m-%d %H:%M:%S')
-                        else:
-                            finish_date = "Not completed"
-                        
-                        if status == 2:
-                            success_orders.append({
-                                'order_id': order_id,
-                                'amount': amount,
-                                'order_no': order_no,
-                                'bank_name': bank_name,
-                                'order_date': order_date,
-                                'finish_date': finish_date,
-                                'status_text': 'success'
-                            })
-                        elif status == 1:
-                            pending_orders.append({
-                                'order_id': order_id,
-                                'amount': amount,
-                                'order_no': order_no,
-                                'bank_name': bank_name,
-                                'order_date': order_date,
-                                'finish_date': finish_date,
-                                'status_text': 'pending'
-                            })
-                        elif status == 3:
-                            failed_orders.append({
-                                'order_id': order_id,
-                                'amount': amount,
-                                'order_no': order_no,
-                                'bank_name': bank_name,
-                                'order_date': order_date,
-                                'finish_date': finish_date,
-                                'status_text': 'failed'
-                            })
-                    
-                    total_success = sum(order['amount'] for order in success_orders)
-                    total_pending = sum(order['amount'] for order in pending_orders)
-                    total_failed = sum(order['amount'] for order in failed_orders)
-                    
+                    message += f"📦 Bot Orders Found: {len(updated_orders)}\n"
                     message += f"📈 {username} - Bot Withdraw History:\n"
                     message += f"   ✅ Success: {len(success_orders)} orders\n"
                     message += f"   ⏳ Pending: {len(pending_orders)} orders\n" 
@@ -650,8 +579,8 @@ class SMS323Automation:
                         for order in success_orders:
                             message += f"      💳 {order['bank_name']}\n"
                             message += f"      💰 {order['amount']} points\n"
-                            message += f"      📅 Ordered: {order['order_date']}\n"
-                            message += f"      ✅ Completed: {order['finish_date']}\n"
+                            message += f"      📅 Ordered: {order['date']}\n"
+                            message += f"      ✅ Status: Success\n"
                             message += f"      🆔 {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
                     
@@ -660,7 +589,7 @@ class SMS323Automation:
                         for order in pending_orders:
                             message += f"      💳 {order['bank_name']}\n"
                             message += f"      💰 {order['amount']} points\n" 
-                            message += f"      📅 Ordered: {order['order_date']}\n"
+                            message += f"      📅 Ordered: {order['date']}\n"
                             message += f"      ⏳ Status: Pending\n"
                             message += f"      🆔 {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
@@ -670,12 +599,10 @@ class SMS323Automation:
                         for order in failed_orders:
                             message += f"      💳 {order['bank_name']}\n"
                             message += f"      💰 {order['amount']} points\n"
-                            message += f"      📅 Ordered: {order['order_date']}\n"
-                            message += f"      ❌ Failed: {order['finish_date']}\n"
+                            message += f"      📅 Ordered: {order['date']}\n"
+                            message += f"      ❌ Status: Failed\n"
                             message += f"      🆔 {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
-                    
-                    self.update_status_data(username, success_orders + pending_orders + failed_orders)
                     
                     return True, message
             
@@ -686,8 +613,56 @@ class SMS323Automation:
             message += f"❌ Status check error: {str(e)}\n"
             return False, message
     
+    def update_orders_from_api(self, user_orders, api_orders):
+        """Update user orders with actual API status"""
+        updated_orders = user_orders.copy()
+        
+        for api_order in api_orders:
+            api_order_id = api_order.get('id')
+            api_status = api_order.get('status')
+            api_amount = api_order.get('score')
+            api_bank_name = api_order.get('bank_name', 'GOMONEY')
+            api_order_no = api_order.get('order_no', '')
+            api_create_time = api_order.get('createtime2', '')
+            
+            # Map API status to our status
+            status_map = {2: 'success', 1: 'pending', 3: 'failed'}
+            mapped_status = status_map.get(api_status, 'pending')
+            
+            # Check if this order exists in our records
+            order_exists = False
+            for i, user_order in enumerate(updated_orders):
+                # Match by order ID or by amount and approximate time
+                if (user_order.get('order_id') == api_order_id or 
+                    (user_order.get('amount') == api_amount and 
+                     user_order.get('bank_name') == api_bank_name)):
+                    
+                    # Update with API data
+                    updated_orders[i].update({
+                        'order_id': api_order_id,
+                        'order_no': api_order_no,
+                        'status': mapped_status,
+                        'date': api_create_time
+                    })
+                    order_exists = True
+                    break
+            
+            # If order doesn't exist in our records but exists in API, add it
+            if not order_exists and api_order_id:
+                new_order = {
+                    "order_id": api_order_id,
+                    "order_no": api_order_no,
+                    "amount": api_amount,
+                    "bank_name": api_bank_name,
+                    "date": api_create_time,
+                    "status": mapped_status
+                }
+                updated_orders.append(new_order)
+        
+        return updated_orders
+    
     def update_status_data(self, username, orders):
-        """Update status data with proper bank_name and status"""
+        """Update status data with proper bank_name and status - FIXED DUPLICATE ISSUE"""
         status_data = self.load_withdraw_status()
         
         if username not in status_data:
@@ -697,32 +672,33 @@ class SMS323Automation:
         
         for order in orders:
             amount = order['amount']
-            order_date = order['order_date']
+            order_date = order.get('date', '')
             
-            if amount not in latest_orders or order_date > latest_orders[amount]['order_date']:
+            if amount not in latest_orders or order_date > latest_orders[amount].get('date', ''):
                 latest_orders[amount] = order
         
         status_data[username] = []
         
         for order in latest_orders.values():
             status_data[username].append({
-                "order_id": order['order_id'],
-                "order_no": order['order_no'],
+                "order_id": order.get('order_id', ''),
+                "order_no": order.get('order_no', ''),
                 "amount": order['amount'],
                 "bank_name": order.get('bank_name', 'GOMONEY'),
-                "date": order['order_date'],
-                "status": order['status_text']
+                "date": order.get('date', ''),
+                "status": order.get('status', 'pending')
             })
         
         self.save_withdraw_status(status_data)
     
     def generate_excel_report(self):
-        """Generate CSV report in the specified format"""
+        """Generate Excel report using CSV format"""
         status_data = self.load_withdraw_status()
         
         if not status_data:
-            return None, "❌ No status data available for report"
+            return None, "❌ No status data available for Excel report"
         
+        # Prepare data for CSV
         csv_data = []
         headers = ['Phone Number', 'Success Orders', 'Failed Orders', 'Points', 'Recent Activity', 'Timestamp', 'Prefix']
         
@@ -747,8 +723,10 @@ class SMS323Automation:
             ]
             csv_data.append(row)
         
+        # Sort by Timestamp (newest first)
         csv_data.sort(key=lambda x: x[5] if x[5] else '', reverse=True)
         
+        # Create CSV file in memory
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
@@ -757,6 +735,7 @@ class SMS323Automation:
         csv_content = output.getvalue()
         output.close()
         
+        # Convert to bytes for file sending
         csv_bytes = BytesIO(csv_content.encode('utf-8'))
         csv_bytes.seek(0)
         
@@ -1639,6 +1618,7 @@ def run_bot():
     """Run Telegram bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
+    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(CallbackQueryHandler(button_handler))
@@ -1651,11 +1631,13 @@ def main():
     """Start both Flask and Telegram bot"""
     print("🚀 Starting Flask server and Telegram Bot...")
     
+    # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    time.sleep(2)
+    # Start Telegram bot in main thread
+    time.sleep(2)  # Give Flask time to start
     run_bot()
 
 if __name__ == "__main__":
