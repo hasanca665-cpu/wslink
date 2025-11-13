@@ -478,8 +478,8 @@ class SMS323Automation:
                 result = response.json()
                 if result.get('code') == 1:
                     # Store the order ID for tracking - FIXED: Check if data exists
-                    order_data = result.get('data', {})
-                    order_id = order_data.get('id')
+                    order_data = result.get('data') or {}
+                    order_id = order_data.get('id') if order_data else None
                     if order_id:
                         self.bot_submitted_orders.add(order_id)
                     
