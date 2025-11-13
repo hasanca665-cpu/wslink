@@ -104,7 +104,7 @@ class SMS323Automation:
     def save_websites(self, websites):
         """Save websites"""
         with open(self.websites_file, 'w') as f:
-            json.dump(websites, f, indent=2)
+            json.ddump(websites, f, indent=2)
     
     def get_all_websites(self):
         """Get all websites"""
@@ -148,7 +148,7 @@ class SMS323Automation:
             json.dump(accounts, f, indent=2)
     
     def load_withdraw_status(self):
-        """Load withdraw status"""
+        """Load withdraw status - ONLY BOT ORDERS"""
         if os.path.exists(self.withdraw_file):
             with open(self.withdraw_file, 'r') as f:
                 return json.load(f)
@@ -499,7 +499,7 @@ class SMS323Automation:
             return False, message
     
     def save_immediate_withdraw_status(self, username, amount, order_id=None):
-        """Immediately save withdraw status after successful submission"""
+        """Immediately save withdraw status after successful submission - ONLY BOT ORDERS"""
         status_data = self.load_withdraw_status()
         
         if username not in status_data:
@@ -507,12 +507,13 @@ class SMS323Automation:
         
         # Create new order entry
         new_order = {
-            "order_id": order_id or f"temp_{int(time.time())}",
-            "order_no": order_id or f"temp_{int(time.time())}",
+            "order_id": order_id or f"bot_{int(time.time())}",
+            "order_no": order_id or f"bot_{int(time.time())}",
             "amount": amount,
             "bank_name": "GOMONEY",
             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            "status": "pending"
+            "status": "pending",
+            "is_bot_order": True  # Mark as bot order
         }
         
         # Add to status data
@@ -522,7 +523,7 @@ class SMS323Automation:
         self.save_withdraw_status(status_data)
     
     def check_withdraw_status(self, username, user_id):
-        """Check withdraw status - FIXED VERSION"""
+        """Check withdraw status - ONLY BOT-SUBMITTED ORDERS"""
         message = f"📊 {username} - Checking withdraw status...\n"
         
         user_website = self.get_user_website(user_id)
@@ -530,11 +531,14 @@ class SMS323Automation:
             message += "❌ No website selected!\n"
             return False, message
         
-        # First, load our saved status data
+        # First, load our saved status data - ONLY BOT ORDERS
         status_data = self.load_withdraw_status()
         user_orders = status_data.get(username, [])
         
-        # Then check actual API status
+        # Filter ONLY bot orders
+        bot_orders = [order for order in user_orders if order.get('is_bot_order')]
+        
+        # Then check actual API status to update our bot orders
         data = {
             'page': 1,
             'size': 50,
@@ -551,22 +555,24 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     api_orders = result.get('data', [])
                     
-                    # Update our local status with API data
-                    updated_orders = self.update_orders_from_api(user_orders, api_orders)
-                    status_data[username] = updated_orders
+                    # Update ONLY our bot orders with API data
+                    updated_bot_orders = self.update_bot_orders_from_api(bot_orders, api_orders)
+                    
+                    # Replace only bot orders in status data
+                    status_data[username] = [order for order in user_orders if not order.get('is_bot_order')] + updated_bot_orders
                     self.save_withdraw_status(status_data)
                     
-                    # Calculate totals from updated orders
-                    success_orders = [o for o in updated_orders if o.get('status') == 'success']
-                    pending_orders = [o for o in updated_orders if o.get('status') == 'pending']
-                    failed_orders = [o for o in updated_orders if o.get('status') == 'failed']
+                    # Calculate totals from updated BOT orders only
+                    success_orders = [o for o in updated_bot_orders if o.get('status') == 'success']
+                    pending_orders = [o for o in updated_bot_orders if o.get('status') == 'pending']
+                    failed_orders = [o for o in updated_bot_orders if o.get('status') == 'failed']
                     
                     total_success = sum(order.get('amount', 0) for order in success_orders)
                     total_pending = sum(order.get('amount', 0) for order in pending_orders)
                     total_failed = sum(order.get('amount', 0) for order in failed_orders)
                     
-                    message += f"📦 Bot Orders Found: {len(updated_orders)}\n"
-                    message += f"📈 {username} - Bot Withdraw History:\n"
+                    message += f"📦 Bot Orders Found: {len(updated_bot_orders)}\n"
+                    message += f"📈 {username} - BOT Withdraw History:\n"
                     message += f"   ✅ Success: {len(success_orders)} orders\n"
                     message += f"   ⏳ Pending: {len(pending_orders)} orders\n" 
                     message += f"   ❌ Failed: {len(failed_orders)} orders\n"
@@ -613,9 +619,9 @@ class SMS323Automation:
             message += f"❌ Status check error: {str(e)}\n"
             return False, message
     
-    def update_orders_from_api(self, user_orders, api_orders):
-        """Update user orders with actual API status"""
-        updated_orders = user_orders.copy()
+    def update_bot_orders_from_api(self, bot_orders, api_orders):
+        """Update ONLY bot orders with actual API status"""
+        updated_orders = bot_orders.copy()
         
         for api_order in api_orders:
             api_order_id = api_order.get('id')
@@ -629,86 +635,46 @@ class SMS323Automation:
             status_map = {2: 'success', 1: 'pending', 3: 'failed'}
             mapped_status = status_map.get(api_status, 'pending')
             
-            # Check if this order exists in our records
-            order_exists = False
-            for i, user_order in enumerate(updated_orders):
-                # Match by order ID or by amount and approximate time
-                if (user_order.get('order_id') == api_order_id or 
-                    (user_order.get('amount') == api_amount and 
-                     user_order.get('bank_name') == api_bank_name)):
+            # Check if this API order matches any of our bot orders
+            for i, bot_order in enumerate(updated_orders):
+                # Match by order ID or by amount and bank name (for bot orders)
+                if (bot_order.get('order_id') == api_order_id or 
+                    (bot_order.get('amount') == api_amount and 
+                     bot_order.get('bank_name') == api_bank_name and
+                     bot_order.get('is_bot_order'))):
                     
-                    # Update with API data
+                    # Update bot order with API data
                     updated_orders[i].update({
                         'order_id': api_order_id,
                         'order_no': api_order_no,
                         'status': mapped_status,
-                        'date': api_create_time
+                        'date': api_create_time,
+                        'is_bot_order': True  # Keep as bot order
                     })
-                    order_exists = True
                     break
-            
-            # If order doesn't exist in our records but exists in API, add it
-            if not order_exists and api_order_id:
-                new_order = {
-                    "order_id": api_order_id,
-                    "order_no": api_order_no,
-                    "amount": api_amount,
-                    "bank_name": api_bank_name,
-                    "date": api_create_time,
-                    "status": mapped_status
-                }
-                updated_orders.append(new_order)
         
         return updated_orders
     
-    def update_status_data(self, username, orders):
-        """Update status data with proper bank_name and status - FIXED DUPLICATE ISSUE"""
-        status_data = self.load_withdraw_status()
-        
-        if username not in status_data:
-            status_data[username] = []
-        
-        latest_orders = {}
-        
-        for order in orders:
-            amount = order['amount']
-            order_date = order.get('date', '')
-            
-            if amount not in latest_orders or order_date > latest_orders[amount].get('date', ''):
-                latest_orders[amount] = order
-        
-        status_data[username] = []
-        
-        for order in latest_orders.values():
-            status_data[username].append({
-                "order_id": order.get('order_id', ''),
-                "order_no": order.get('order_no', ''),
-                "amount": order['amount'],
-                "bank_name": order.get('bank_name', 'GOMONEY'),
-                "date": order.get('date', ''),
-                "status": order.get('status', 'pending')
-            })
-        
-        self.save_withdraw_status(status_data)
-    
     def generate_excel_report(self):
-        """Generate Excel report using CSV format"""
+        """Generate Excel report using CSV format - ONLY BOT ORDERS"""
         status_data = self.load_withdraw_status()
         
         if not status_data:
-            return None, "❌ No status data available for Excel report"
+            return None, "❌ No bot status data available for Excel report"
         
-        # Prepare data for CSV
+        # Prepare data for CSV - ONLY BOT ORDERS
         csv_data = []
         headers = ['Phone Number', 'Success Orders', 'Failed Orders', 'Points', 'Recent Activity', 'Timestamp', 'Prefix']
         
         for username, orders in status_data.items():
-            success_orders = [o for o in orders if o.get('status') == 'success']
-            failed_orders = [o for o in orders if o.get('status') == 'failed']
+            # Filter only bot orders
+            bot_orders = [o for o in orders if o.get('is_bot_order')]
+            success_orders = [o for o in bot_orders if o.get('status') == 'success']
+            failed_orders = [o for o in bot_orders if o.get('status') == 'failed']
             
             recent_order = None
-            if orders:
-                recent_order = max(orders, key=lambda x: x.get('date', ''))
+            if bot_orders:
+                recent_order = max(bot_orders, key=lambda x: x.get('date', ''))
             
             prefix = username[:3] if len(username) >= 3 else username
             
@@ -739,7 +705,9 @@ class SMS323Automation:
         csv_bytes = BytesIO(csv_content.encode('utf-8'))
         csv_bytes.seek(0)
         
-        return csv_bytes, f"✅ CSV report generated with {len(csv_data)} accounts"
+        return csv_bytes, f"✅ BOT CSV report generated with {len(csv_data)} accounts"
+    
+    # ... (rest of the methods remain exactly the same as previous version)
     
     async def process_all_accounts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process all accounts with individual messages for each account"""
@@ -1200,13 +1168,15 @@ class SMS323Automation:
         
         all_orders = []
         for username, orders in status_data.items():
-            for order in orders:
+            # Filter ONLY bot orders
+            bot_orders = [o for o in orders if o.get('is_bot_order')]
+            for order in bot_orders:
                 order['username'] = username
                 all_orders.append(order)
                 
-            success_orders = [o for o in orders if o.get('status') == 'success']
-            pending_orders = [o for o in orders if o.get('status') == 'pending']
-            failed_orders = [o for o in orders if o.get('status') == 'failed']
+            success_orders = [o for o in bot_orders if o.get('status') == 'success']
+            pending_orders = [o for o in bot_orders if o.get('status') == 'pending']
+            failed_orders = [o for o in bot_orders if o.get('status') == 'failed']
             
             total_success += len(success_orders)
             total_pending += len(pending_orders)
@@ -1239,7 +1209,7 @@ class SMS323Automation:
         message += "-" * 50 + "\n\n"
         
         if not current_page_orders:
-            message += "No orders found for this page.\n"
+            message += "No BOT orders found for this page.\n"
         else:
             for i, order in enumerate(current_page_orders, start_idx + 1):
                 status = order.get('status', 'unknown')
@@ -1256,7 +1226,7 @@ class SMS323Automation:
                 message += "   ─────────────────────────\n"
         
         if total_pages > 1:
-            message += f"\n📄 Page {page} of {total_pages} | Total Orders: {len(all_orders)}"
+            message += f"\n📄 Page {page} of {total_pages} | Total BOT Orders: {len(all_orders)}"
         
         return message
     
@@ -1373,7 +1343,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(query.message.chat_id, excel_message)
         
         status_data = automation.load_withdraw_status()
-        total_orders = sum(len(orders) for orders in status_data.values())
+        total_orders = sum(len([o for o in orders if o.get('is_bot_order')]) for orders in status_data.values())
         if total_orders > 50:
             keyboard = [
                 [InlineKeyboardButton("Next Page ➡️", callback_data="status_page_2")],
@@ -1390,7 +1360,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_long_message(context, query.message.chat_id, result)
         
         status_data = automation.load_withdraw_status()
-        total_orders = sum(len(orders) for orders in status_data.values())
+        total_orders = sum(len([o for o in orders if o.get('is_bot_order')]) for orders in status_data.values())
         total_pages = (total_orders + 49) // 50
         
         keyboard = []
