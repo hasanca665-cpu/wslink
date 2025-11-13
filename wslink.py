@@ -16,11 +16,11 @@ app = Flask(__name__)
 
 @app.route('/')
 def home():
-    return "🤖 Telegram Bot is running!", 200
+    return "Telegram Bot is running!", 200
 
 @app.route('/health')
 def health():
-    return "✅ Bot is healthy!", 200
+    return "Bot is healthy!", 200
 
 def run_flask():
     """Run Flask app with proper port binding for Render"""
@@ -44,7 +44,7 @@ class SMS323Automation:
         self.user_states = {}
         self.processing_results = {}
         self.failed_withdraws = {}
-        self.bot_submitted_orders = set()
+        self.bot_submitted_orders = set()   # <-- শুধুমাত্র বটের order_id গুলো
         self.admin_id = 5624278091
         self.forward_group_id = -1003349774475
     
@@ -104,7 +104,7 @@ class SMS323Automation:
     def save_websites(self, websites):
         """Save websites"""
         with open(self.websites_file, 'w') as f:
-            json.ddump(websites, f, indent=2)
+            json.dump(websites, f, indent=2)
     
     def get_all_websites(self):
         """Get all websites"""
@@ -148,7 +148,7 @@ class SMS323Automation:
             json.dump(accounts, f, indent=2)
     
     def load_withdraw_status(self):
-        """Load withdraw status - ONLY BOT ORDERS"""
+        """Load withdraw status"""
         if os.path.exists(self.withdraw_file):
             with open(self.withdraw_file, 'r') as f:
                 return json.load(f)
@@ -161,23 +161,23 @@ class SMS323Automation:
     
     def clear_all_data(self):
         """Clear all data"""
-        message = "🗑️ Clearing all data...\n"
+        message = "Clearing all data...\n"
         
         files_to_clear = [self.accounts_file, self.withdraw_file]
         
         for file in files_to_clear:
             if os.path.exists(file):
                 os.remove(file)
-                message += f"✅ {file} deleted\n"
+                message += f"{file} deleted\n"
         
-        message += "🎉 All data cleared!"
+        message += "All data cleared!"
         return message
     
     async def forward_to_group(self, context, message, user_info=""):
         """Forward message to group"""
         try:
             if user_info:
-                formatted_message = f"👤 {user_info}\n\n{message}"
+                formatted_message = f"{user_info}\n\n{message}"
             else:
                 formatted_message = message
             
@@ -193,28 +193,28 @@ class SMS323Automation:
         websites = self.get_all_websites()
         
         if action == "list":
-            message = "🌐 Website Management\n"
+            message = "Website Management\n"
             message += "=" * 40 + "\n"
             
             for i, website in enumerate(websites, 1):
                 user_website = self.get_user_website(user_id)
-                current_indicator = " ✅" if user_website and website == user_website else ""
+                current_indicator = " (current)" if user_website and website == user_website else ""
                 platform_id = website.get('platform_id', 22)
                 message += f"{i}. {website['name']} - {website['base_url']} (Platform: {platform_id}){current_indicator}\n"
             return message
             
         elif action == "add" and data:
             if user_id != self.admin_id:
-                return "❌ Only admin can add websites!"
+                return "Only admin can add websites!"
             
             name, base_url, origin, referer, platform_id = data
             if not all([name, base_url, origin, referer]):
-                return "❌ Please fill all fields!"
+                return "Please fill all fields!"
             
             try:
                 platform_id = int(platform_id)
             except ValueError:
-                return "❌ Please enter valid platform ID!"
+                return "Please enter valid platform ID!"
             
             new_website = {
                 "name": name,
@@ -226,7 +226,7 @@ class SMS323Automation:
             
             websites.append(new_website)
             self.save_websites(websites)
-            return f"✅ {name} website added with Platform ID: {platform_id}!"
+            return f"{name} website added with Platform ID: {platform_id}!"
             
         elif action == "change" and data:
             try:
@@ -235,15 +235,15 @@ class SMS323Automation:
                     self.set_user_website(user_id, choice)
                     user_website = self.get_user_website(user_id)
                     platform_id = user_website.get('platform_id', 22)
-                    return f"✅ Your website set to: {user_website['name']} (Platform ID: {platform_id})"
+                    return f"Your website set to: {user_website['name']} (Platform ID: {platform_id})"
                 else:
-                    return "❌ Wrong selection!"
+                    return "Wrong selection!"
             except ValueError:
-                return "❌ Please enter a number!"
+                return "Please enter a number!"
                 
         elif action == "delete" and data:
             if user_id != self.admin_id:
-                return "❌ Only admin can delete websites!"
+                return "Only admin can delete websites!"
             
             try:
                 choice = int(data) - 1
@@ -257,13 +257,13 @@ class SMS323Automation:
                     websites.remove(website_to_delete)
                     self.save_websites(websites)
                     self.save_user_websites()
-                    return f"✅ {website_to_delete['name']} deleted!"
+                    return f"{website_to_delete['name']} deleted!"
                 else:
-                    return "❌ Wrong selection!"
+                    return "Wrong selection!"
             except ValueError:
-                return "❌ Please enter a number!"
+                return "Please enter a number!"
         
-        return "🌐 Website Management"
+        return "Website Management"
     
     def input_accounts(self, accounts_text, user_info=""):
         """Input multiple accounts at once - Auto clear old data"""
@@ -287,16 +287,16 @@ class SMS323Automation:
         
         if accounts:
             self.save_accounts(accounts)
-            return f"💾 Total {len(accounts)} accounts saved\n🔄 Old data cleared automatically!"
-        return "❌ No valid accounts found!"
+            return f"Total {len(accounts)} accounts saved\nOld data cleared automatically!"
+        return "No valid accounts found!"
     
     def login(self, username, password, user_id):
         """Login function - FAST VERSION"""
-        message = f"🔐 {username} - Processing...\n"
+        message = f"{username} - Processing...\n"
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected! Please select a website first.\n"
+            message += "No website selected! Please select a website first.\n"
             return False, message
         
         data = {'username': username, 'password': password}
@@ -313,11 +313,11 @@ class SMS323Automation:
                         self.session.headers.update({'token': token})
                         message += ""
                         return True, message
-            message += "❌ Login failed\n"
+            message += "Login failed\n"
             return False, message
                 
         except Exception as e:
-            message += f"❌ Login error: {str(e)}\n"
+            message += f"Login error: {str(e)}\n"
             return False, message
     
     def get_user_info(self, user_id):
@@ -326,7 +326,7 @@ class SMS323Automation:
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected!\n"
+            message += "No website selected!\n"
             return 0, message
         
         try:
@@ -337,22 +337,22 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     user_data = result.get('data', {})
                     balance = user_data.get('score', 0)
-                    message += f"✅ Balance: {balance} points"
+                    message += f"Balance: {balance} points"
                     return balance, message
-            message += "❌ Balance check failed\n"
+            message += "Balance check failed\n"
             return 0, message
                 
         except Exception:
-            message += "❌ Balance check error\n"
+            message += "Balance check error\n"
             return 0, message
     
     def add_bank_account(self, username, password, user_id):
         """Add bank account - 100% GOMONEY ONLY"""
-        message = "💳 Setting up bank account...\n"
+        message = "Setting up bank account...\n"
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected!\n"
+            message += "No website selected!\n"
             return False, message
         
         bank_account_number = "8504484734"
@@ -361,7 +361,7 @@ class SMS323Automation:
         
         existing_bank_id = self.check_existing_banks_fast(user_id)
         if existing_bank_id:
-            message += f"✅ Bank already exists: {bank_name}\n"
+            message += f"Bank already exists: {bank_name}\n"
             return True, message
         
         data = {
@@ -373,7 +373,7 @@ class SMS323Automation:
             'password': password
         }
         
-        message += f"📝 Setting Bank: {selected_name} - {bank_name}\n"
+        message += f"Setting Bank: {selected_name} - {bank_name}\n"
         
         try:
             response = self.session.post(f"{user_website['base_url']}/api/user_bank/add", data=data, timeout=10)
@@ -384,13 +384,13 @@ class SMS323Automation:
                     message += ""
                     return True, message
                 else:
-                    message += f"❌ Bank setup failed: {result.get('msg', 'Unknown error')}\n"
+                    message += f"Bank setup failed: {result.get('msg', 'Unknown error')}\n"
                     return False, message
-            message += "❌ Bank setup failed\n"
+            message += "Bank setup failed\n"
             return False, message
                 
         except Exception as e:
-            message += f"❌ Bank setup error: {str(e)}\n"
+            message += f"Bank setup error: {str(e)}\n"
             return False, message
     
     def check_existing_banks_fast(self, user_id):
@@ -415,11 +415,11 @@ class SMS323Automation:
     
     def get_bank_id(self, user_id):
         """Get bank ID - FORCE GOMONEY ONLY"""
-        message = "🔍 Finding bank ID...\n"
+        message = "Finding bank ID...\n"
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected!\n"
+            message += "No website selected!\n"
             return None, message
         
         try:
@@ -440,33 +440,33 @@ class SMS323Automation:
                     if gomoney_bank:
                         bank_id = gomoney_bank.get('id')
                         bank_name = gomoney_bank.get('bank_name')
-                        message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                        message += f"Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
                         return bank_id, message
                     else:
-                        message += "❌ GOMONEY bank not found in bank list\n"
+                        message += "GOMONEY bank not found in bank list\n"
                         for bank in banks:
                             if bank.get('bank_name') == 'GOMONEY':
                                 bank_id = bank.get('id')
                                 bank_name = bank.get('bank_name')
-                                message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                                message += f"Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
                                 return bank_id, message
                         
-                        message += "❌ No GOMONEY bank available\n"
+                        message += "No GOMONEY bank available\n"
                         return None, message
-            message += "❌ Bank ID not found\n"
+            message += "Bank ID not found\n"
             return None, message
                 
         except Exception:
-            message += "❌ Bank ID error\n"
+            message += "Bank ID error\n"
             return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
         """Submit withdraw - FIXED VERSION"""
-        message = f"🚀 Submitting withdraw: {amount} points...\n"
+        message = f"Submitting withdraw: {amount} points...\n"
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected!\n"
+            message += "No website selected!\n"
             return False, message
         
         data = {'score': amount, 'bank_id': bank_id}
@@ -477,68 +477,97 @@ class SMS323Automation:
             if response.status_code == 200:
                 result = response.json()
                 if result.get('code') == 1:
-                    # Store the order ID for tracking - FIXED: Check if data exists
                     order_data = result.get('data', {})
                     order_id = order_data.get('id')
                     if order_id:
-                        self.bot_submitted_orders.add(order_id)
-                    
-                    # IMMEDIATELY SAVE THE WITHDRAW STATUS
+                        self.bot_submitted_orders.add(order_id)   # <-- বটের order_id সংরক্ষণ
                     self.save_immediate_withdraw_status(username, amount, order_id)
-                    
-                    message += "🎉 Withdraw submitted successfully!\n"
+                    message += "Withdraw submitted successfully!\n"
                     return True, message
                 else:
-                    message += f"❌ Withdraw submit failed: {result.get('msg', 'Unknown error')}\n"
+                    message += f"Withdraw submit failed: {result.get('msg', 'Unknown error')}\n"
                     return False, message
-            message += "❌ Withdraw submit failed\n"
+            message += "Withdraw submit failed\n"
             return False, message
                 
         except Exception as e:
-            message += f"❌ Withdraw submit error: {str(e)}\n"
+            message += f"Withdraw submit error: {str(e)}\n"
             return False, message
     
     def save_immediate_withdraw_status(self, username, amount, order_id=None):
-        """Immediately save withdraw status after successful submission - ONLY BOT ORDERS"""
+        """Immediately save withdraw status after successful submission"""
         status_data = self.load_withdraw_status()
         
         if username not in status_data:
             status_data[username] = []
         
-        # Create new order entry
         new_order = {
-            "order_id": order_id or f"bot_{int(time.time())}",
-            "order_no": order_id or f"bot_{int(time.time())}",
+            "order_id": order_id or f"temp_{int(time.time())}",
+            "order_no": order_id or f"temp_{int(time.time())}",
             "amount": amount,
             "bank_name": "GOMONEY",
             "date": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "status": "pending",
-            "is_bot_order": True  # Mark as bot order
+            "bot_submitted": True          # <-- মার্কার যে এটা বটের অর্ডার
         }
         
-        # Add to status data
         status_data[username].append(new_order)
-        
-        # Save updated status
         self.save_withdraw_status(status_data)
     
+    def update_orders_from_api(self, user_orders, api_orders):
+        """Update user orders with actual API status – শুধু বটের অর্ডার"""
+        updated_orders = []
+        
+        # লোকালে bot_submitted=True অর্ডারগুলো রাখি
+        for order in user_orders:
+            if order.get("bot_submitted"):
+                updated_orders.append(order.copy())
+        
+        # API থেকে শুধু bot_submitted_orders সেটের order_id গুলো আপডেট করি
+        for api_order in api_orders:
+            api_order_id = api_order.get('id')
+            if api_order_id in self.bot_submitted_orders:
+                status_map = {2: 'success', 1: 'pending', 3: 'failed'}
+                mapped_status = status_map.get(api_order.get('status'), 'pending')
+                
+                found = False
+                for i, order in enumerate(updated_orders):
+                    if order.get('order_id') == api_order_id:
+                        updated_orders[i].update({
+                            'order_id': api_order_id,
+                            'order_no': api_order.get('order_no', ''),
+                            'status': mapped_status,
+                            'date': api_order.get('createtime2', ''),
+                            'amount': api_order.get('score'),
+                            'bank_name': api_order.get('bank_name', 'GOMONEY')
+                        })
+                        found = True
+                        break
+                if not found:
+                    updated_orders.append({
+                        "order_id": api_order_id,
+                        "order_no": api_order.get('order_no', ''),
+                        "amount": api_order.get('score'),
+                        "bank_name": api_order.get('bank_name', 'GOMONEY'),
+                        "date": api_order.get('createtime2', ''),
+                        "status": mapped_status,
+                        "bot_submitted": True
+                    })
+        
+        return updated_orders
+    
     def check_withdraw_status(self, username, user_id):
-        """Check withdraw status - ONLY BOT-SUBMITTED ORDERS"""
-        message = f"📊 {username} - Checking withdraw status...\n"
+        """Check withdraw status - শুধু BOT অর্ডার দেখাবে"""
+        message = f"{username} - Checking withdraw status...\n"
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            message += "❌ No website selected!\n"
+            message += "No website selected!\n"
             return False, message
         
-        # First, load our saved status data - ONLY BOT ORDERS
         status_data = self.load_withdraw_status()
         user_orders = status_data.get(username, [])
         
-        # Filter ONLY bot orders
-        bot_orders = [order for order in user_orders if order.get('is_bot_order')]
-        
-        # Then check actual API status to update our bot orders
         data = {
             'page': 1,
             'size': 50,
@@ -554,121 +583,149 @@ class SMS323Automation:
                 result = response.json()
                 if result.get('code') == 1:
                     api_orders = result.get('data', [])
-                    
-                    # Update ONLY our bot orders with API data
-                    updated_bot_orders = self.update_bot_orders_from_api(bot_orders, api_orders)
-                    
-                    # Replace only bot orders in status data
-                    status_data[username] = [order for order in user_orders if not order.get('is_bot_order')] + updated_bot_orders
+                    updated_orders = self.update_orders_from_api(user_orders, api_orders)
+                    status_data[username] = updated_orders
                     self.save_withdraw_status(status_data)
                     
-                    # Calculate totals from updated BOT orders only
-                    success_orders = [o for o in updated_bot_orders if o.get('status') == 'success']
-                    pending_orders = [o for o in updated_bot_orders if o.get('status') == 'pending']
-                    failed_orders = [o for o in updated_bot_orders if o.get('status') == 'failed']
+                    success_orders = [o for o in updated_orders if o.get('status') == 'success']
+                    pending_orders = [o for o in updated_orders if o.get('status') == 'pending']
+                    failed_orders = [o for o in updated_orders if o.get('status') == 'failed']
                     
-                    total_success = sum(order.get('amount', 0) for order in success_orders)
-                    total_pending = sum(order.get('amount', 0) for order in pending_orders)
-                    total_failed = sum(order.get('amount', 0) for order in failed_orders)
+                    total_success = sum(o.get('amount', 0) for o in success_orders)
+                    total_pending = sum(o.get('amount', 0) for o in pending_orders)
+                    total_failed = sum(o.get('amount', 0) for o in failed_orders)
                     
-                    message += f"📦 Bot Orders Found: {len(updated_bot_orders)}\n"
-                    message += f"📈 {username} - BOT Withdraw History:\n"
-                    message += f"   ✅ Success: {len(success_orders)} orders\n"
-                    message += f"   ⏳ Pending: {len(pending_orders)} orders\n" 
-                    message += f"   ❌ Failed: {len(failed_orders)} orders\n"
-                    message += f"   💰 Success Points: {total_success}\n"
-                    message += f"   ⏳ Pending Points: {total_pending}\n"
-                    message += f"   💸 Failed Points: {total_failed}\n"
+                    message += f"Bot Orders Found: {len(updated_orders)}\n"
+                    message += f"{username} - Bot Withdraw History:\n"
+                    message += f"   Success: {len(success_orders)} orders\n"
+                    message += f"   Pending: {len(pending_orders)} orders\n" 
+                    message += f"   Failed: {len(failed_orders)} orders\n"
+                    message += f"   Success Points: {total_success}\n"
+                    message += f"   Pending Points: {total_pending}\n"
+                    message += f"   Failed Points: {total_failed}\n"
                     
                     if success_orders:
-                        message += f"\n   🟢 SUCCESSFUL ORDERS:\n"
+                        message += f"\n   SUCCESSFUL ORDERS:\n"
                         for order in success_orders:
-                            message += f"      💳 {order['bank_name']}\n"
-                            message += f"      💰 {order['amount']} points\n"
-                            message += f"      📅 Ordered: {order['date']}\n"
-                            message += f"      ✅ Status: Success\n"
-                            message += f"      🆔 {order['order_no']}\n"
+                            message += f"      GOMONEY\n"
+                            message += f"      {order['amount']} points\n"
+                            message += f"      Ordered: {order['date']}\n"
+                            message += f"      Status: Success\n"
+                            message += f"      {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
                     
                     if pending_orders:
-                        message += f"\n   🟡 PENDING ORDERS:\n"
+                        message += f"\n   PENDING ORDERS:\n"
                         for order in pending_orders:
-                            message += f"      💳 {order['bank_name']}\n"
-                            message += f"      💰 {order['amount']} points\n" 
-                            message += f"      📅 Ordered: {order['date']}\n"
-                            message += f"      ⏳ Status: Pending\n"
-                            message += f"      🆔 {order['order_no']}\n"
+                            message += f"      GOMONEY\n"
+                            message += f"      {order['amount']} points\n" 
+                            message += f"      Ordered: {order['date']}\n"
+                            message += f"      Status: Pending\n"
+                            message += f"      {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
                     
                     if failed_orders:
-                        message += f"\n   🔴 FAILED ORDERS:\n"
+                        message += f"\n   FAILED ORDERS:\n"
                         for order in failed_orders:
-                            message += f"      💳 {order['bank_name']}\n"
-                            message += f"      💰 {order['amount']} points\n"
-                            message += f"      📅 Ordered: {order['date']}\n"
-                            message += f"      ❌ Status: Failed\n"
-                            message += f"      🆔 {order['order_no']}\n"
+                            message += f"      GOMONEY\n"
+                            message += f"      {order['amount']} points\n"
+                            message += f"      Ordered: {order['date']}\n"
+                            message += f"      Status: Failed\n"
+                            message += f"      {order['order_no']}\n"
                             message += f"      ──────────────────────────\n"
                     
                     return True, message
             
-            message += "❌ Status check failed\n"
+            message += "Status check failed\n"
             return False, message
                 
         except Exception as e:
-            message += f"❌ Status check error: {str(e)}\n"
+            message += f"Status check error: {str(e)}\n"
             return False, message
     
-    def update_bot_orders_from_api(self, bot_orders, api_orders):
-        """Update ONLY bot orders with actual API status"""
-        updated_orders = bot_orders.copy()
-        
-        for api_order in api_orders:
-            api_order_id = api_order.get('id')
-            api_status = api_order.get('status')
-            api_amount = api_order.get('score')
-            api_bank_name = api_order.get('bank_name', 'GOMONEY')
-            api_order_no = api_order.get('order_no', '')
-            api_create_time = api_order.get('createtime2', '')
-            
-            # Map API status to our status
-            status_map = {2: 'success', 1: 'pending', 3: 'failed'}
-            mapped_status = status_map.get(api_status, 'pending')
-            
-            # Check if this API order matches any of our bot orders
-            for i, bot_order in enumerate(updated_orders):
-                # Match by order ID or by amount and bank name (for bot orders)
-                if (bot_order.get('order_id') == api_order_id or 
-                    (bot_order.get('amount') == api_amount and 
-                     bot_order.get('bank_name') == api_bank_name and
-                     bot_order.get('is_bot_order'))):
-                    
-                    # Update bot order with API data
-                    updated_orders[i].update({
-                        'order_id': api_order_id,
-                        'order_no': api_order_no,
-                        'status': mapped_status,
-                        'date': api_create_time,
-                        'is_bot_order': True  # Keep as bot order
-                    })
-                    break
-        
-        return updated_orders
-    
-    def generate_excel_report(self):
-        """Generate Excel report using CSV format - ONLY BOT ORDERS"""
+    def show_status_summary(self, page=1):
+        """Show status summary with pagination - ONLY BOT ORDERS"""
         status_data = self.load_withdraw_status()
         
         if not status_data:
-            return None, "❌ No bot status data available for Excel report"
+            return "No bot status data found!"
         
-        # Prepare data for CSV - ONLY BOT ORDERS
+        total_success = total_pending = total_failed = 0
+        total_success_points = total_pending_points = total_failed_points = 0
+        
+        all_orders = []
+        for username, orders in status_data.items():
+            for order in orders:
+                if order.get("bot_submitted"):          # <-- শুধু বটের অর্ডার
+                    order['username'] = username
+                    all_orders.append(order)
+                    if order.get('status') == 'success':
+                        total_success += 1
+                        total_success_points += order.get('amount', 0)
+                    elif order.get('status') == 'pending':
+                        total_pending += 1
+                        total_pending_points += order.get('amount', 0)
+                    elif order.get('status') == 'failed':
+                        total_failed += 1
+                        total_failed_points += order.get('amount', 0)
+        
+        all_orders.sort(key=lambda x: x.get('date', ''), reverse=True)
+        
+        orders_per_page = 50
+        total_pages = (len(all_orders) + orders_per_page - 1) // orders_per_page
+        
+        start_idx = (page - 1) * orders_per_page
+        end_idx = start_idx + orders_per_page
+        current_page_orders = all_orders[start_idx:end_idx]
+        
+        message = f"BOT Withdraw Status Summary (Page {page}/{total_pages})\n"
+        message += "=" * 60 + "\n\n"
+        
+        message += f"BOT TOTAL SUMMARY:\n"
+        message += f"   Success Orders: {total_success}\n"
+        message += f"   Pending Orders: {total_pending}\n"
+        message += f"   Failed Orders: {total_failed}\n"
+        message += f"   Total Success Points: {total_success_points}\n"
+        message += f"   Total Pending Points: {total_pending_points}\n"
+        message += f"   Total Failed Points: {total_failed_points}\n\n"
+        
+        message += f"BOT ORDER HISTORY:\n"
+        message += "-" * 50 + "\n\n"
+        
+        if not current_page_orders:
+            message += "No orders found for this page.\n"
+        else:
+            for i, order in enumerate(current_page_orders, start_idx + 1):
+                status = order.get('status', 'unknown')
+                status_emoji = "Success" if status == 'success' else "Pending" if status == 'pending' else "Failed"
+                username = order.get('username', 'Unknown')
+                bank_name = order.get('bank_name', 'GOMONEY')
+                amount = order.get('amount', 0)
+                date = order.get('date', 'Unknown date')
+                order_no = order.get('order_no', 'N/A')
+                
+                message += f"{i}. {status_emoji} {username}\n"
+                message += f"   {bank_name} | {amount} pts\n"
+                message += f"   {date} | {order_no}\n"
+                message += "   ─────────────────────────\n"
+        
+        if total_pages > 1:
+            message += f"\nPage {page} of {total_pages} | Total Orders: {len(all_orders)}"
+        
+        return message
+    
+    def generate_excel_report(self):
+        """Generate Excel report using CSV format"""
+        status_data = self.load_withdraw_status()
+        
+        if not status_data:
+            return None, "No status data available for Excel report"
+        
         csv_data = []
         headers = ['Phone Number', 'Success Orders', 'Failed Orders', 'Points', 'Recent Activity', 'Timestamp', 'Prefix']
         
         for username, orders in status_data.items():
-            # Filter only bot orders
-            bot_orders = [o for o in orders if o.get('is_bot_order')]
+            bot_orders = [o for o in orders if o.get("bot_submitted", False)]
             success_orders = [o for o in bot_orders if o.get('status') == 'success']
             failed_orders = [o for o in bot_orders if o.get('status') == 'failed']
             
@@ -689,10 +746,8 @@ class SMS323Automation:
             ]
             csv_data.append(row)
         
-        # Sort by Timestamp (newest first)
         csv_data.sort(key=lambda x: x[5] if x[5] else '', reverse=True)
         
-        # Create CSV file in memory
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
@@ -701,31 +756,28 @@ class SMS323Automation:
         csv_content = output.getvalue()
         output.close()
         
-        # Convert to bytes for file sending
         csv_bytes = BytesIO(csv_content.encode('utf-8'))
         csv_bytes.seek(0)
         
-        return csv_bytes, f"✅ BOT CSV report generated with {len(csv_data)} accounts"
-    
-    # ... (rest of the methods remain exactly the same as previous version)
+        return csv_bytes, f"CSV report generated with {len(csv_data)} accounts"
     
     async def process_all_accounts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process all accounts with individual messages for each account"""
         accounts = self.load_accounts()
         
         if not accounts:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text("❌ No accounts found! Please add accounts first.", reply_markup=reply_markup)
+            await update.callback_query.edit_message_text("No accounts found! Please add accounts first.", reply_markup=reply_markup)
             return
         
         user_id = update.callback_query.from_user.id
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Select Website", callback_data="website_manage"), InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
+            await update.callback_query.edit_message_text("No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
         chat_id = update.callback_query.message.chat_id
@@ -742,7 +794,7 @@ class SMS323Automation:
             'accounts_per_page': 20
         }
         
-        initial_message = f"🔄 Processing {len(accounts)} accounts..."
+        initial_message = f"Processing {len(accounts)} accounts..."
         await update.callback_query.edit_message_text(initial_message)
         await self.forward_to_group(context, initial_message, user_info)
         
@@ -753,15 +805,15 @@ class SMS323Automation:
             username = account["username"]
             password = account["password"]
             
-            account_message = f"⚡ Account {i}/{len(accounts)}: {username}\n"
+            account_message = f"Account {i}/{len(accounts)}: {username}\n"
             account_message += "-" * 30 + "\n"
             
             login_success, login_msg = self.login(username, password, user_id)
             account_message += login_msg
             
             if not login_success:
-                failed_details.append(f"❌ {username} - Login failed")
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                failed_details.append(f"{username} - Login failed")
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
                 await self.forward_to_group(context, account_message, user_info)
@@ -771,22 +823,22 @@ class SMS323Automation:
             account_message += balance_msg
             
             if balance <= 200:
-                account_message += "💸 Insufficient balance\n"
-                failed_details.append(f"💸 {username} - Insufficient balance ({balance} points)")
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                account_message += "Insufficient balance\n"
+                failed_details.append(f"{username} - Insufficient balance ({balance} points)")
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
                 await self.forward_to_group(context, account_message, user_info)
                 continue
             
             withdraw_amount = balance - 200
-            account_message += f"📊 Withdraw amount: {withdraw_amount} points\n"
+            account_message += f"Withdraw amount: {withdraw_amount} points\n"
             
             bank_success, bank_msg = self.add_bank_account(username, password, user_id)
             account_message += bank_msg
             if not bank_success:
-                failed_details.append(f"🏦 {username} - Bank setup failed")
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                failed_details.append(f"{username} - Bank setup failed")
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
                 await self.forward_to_group(context, account_message, user_info)
@@ -795,8 +847,8 @@ class SMS323Automation:
             bank_id, bank_id_msg = self.get_bank_id(user_id)
             account_message += bank_id_msg
             if not bank_id:
-                failed_details.append(f"🏦 {username} - Bank ID not found")
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                failed_details.append(f"{username} - Bank ID not found")
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
                 await self.forward_to_group(context, account_message, user_info)
@@ -807,11 +859,11 @@ class SMS323Automation:
             
             if withdraw_success:
                 successful_accounts += 1
-                account_message += "✅ Withdraw successful!\n"
+                account_message += "Withdraw successful!\n"
             else:
-                failed_details.append(f"❌ {username} - Withdraw failed")
+                failed_details.append(f"{username} - Withdraw failed")
             
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
             await self.forward_to_group(context, account_message, user_info)
@@ -836,13 +888,13 @@ class SMS323Automation:
         total_time = results['total_time']
         failed_accounts = results['failed_accounts']
         
-        summary_message = f"\n🎊 {'='*40}\n"
-        summary_message += f"📈 Summary: {successful}/{total_accounts} accounts successful\n"
-        summary_message += f"⏱️ Total time: {total_time:.2f} seconds\n"
-        summary_message += f"🚀 Average: {total_time/total_accounts:.2f} seconds per account\n"
+        summary_message = f"\n{'='*40}\n"
+        summary_message += f"Summary: {successful}/{total_accounts} accounts successful\n"
+        summary_message += f"Total time: {total_time:.2f} seconds\n"
+        summary_message += f"Average: {total_time/total_accounts:.2f} seconds per account\n"
         summary_message += f"{'='*40}"
         
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, summary_message, reply_markup=reply_markup)
         await self.forward_to_group(context, summary_message, user_info)
@@ -865,7 +917,7 @@ class SMS323Automation:
         end_idx = start_idx + accounts_per_page
         current_page_accounts = failed_accounts[start_idx:end_idx]
         
-        failed_message = f"📋 Failed Accounts Details (Page {page}/{total_pages}):\n"
+        failed_message = f"Failed Accounts Details (Page {page}/{total_pages}):\n"
         failed_message += "=" * 50 + "\n"
         
         for i, account in enumerate(current_page_accounts, start_idx + 1):
@@ -873,41 +925,36 @@ class SMS323Automation:
         
         keyboard = []
         if page > 1:
-            keyboard.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"failed_page_{page-1}"))
+            keyboard.append(InlineKeyboardButton("Previous", callback_data=f"failed_page_{page-1}"))
         
         if page < total_pages:
-            keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"failed_page_{page+1}"))
+            keyboard.append(InlineKeyboardButton("Next", callback_data=f"failed_page_{page+1}"))
         
         if keyboard:
             reply_markup = InlineKeyboardMarkup([keyboard])
+            await context.bot.send_message(chat_id, failed_message, reply_markup=reply_markup)
         else:
-            reply_markup = None
-        
-        menu_button = [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
-        if reply_markup:
-            reply_markup.inline_keyboard.append(menu_button)
-        else:
-            reply_markup = InlineKeyboardMarkup([menu_button])
-        
-        await context.bot.send_message(chat_id, failed_message, reply_markup=reply_markup)
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await context.bot.send_message(chat_id, failed_message, reply_markup=reply_markup)
     
     async def check_all_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Check withdraw status for all accounts with individual messages - ONLY BOT ORDERS"""
         accounts = self.load_accounts()
         
         if not accounts:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text("❌ No accounts found!", reply_markup=reply_markup)
+            await update.callback_query.edit_message_text("No accounts found!", reply_markup=reply_markup)
             return
         
         user_id = update.callback_query.from_user.id
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Select Website", callback_data="website_manage"), InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.callback_query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
+            await update.callback_query.edit_message_text("No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
         chat_id = update.callback_query.message.chat_id
@@ -921,7 +968,7 @@ class SMS323Automation:
             'accounts_per_page': 20
         }
         
-        initial_message = f"📊 Checking BOT withdraw history for {len(accounts)} accounts"
+        initial_message = f"Checking BOT withdraw history for {len(accounts)} accounts"
         await update.callback_query.edit_message_text(initial_message)
         await self.forward_to_group(context, initial_message, user_info)
         
@@ -938,8 +985,8 @@ class SMS323Automation:
             account_message += login_msg
             
             if not login_success:
-                account_message += "❌ Login failed, cannot check status\n"
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                account_message += "Login failed, cannot check status\n"
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
                 await self.forward_to_group(context, account_message, user_info)
@@ -951,7 +998,7 @@ class SMS323Automation:
             failed_count = await self.extract_failed_withdraws(user_id, username, status_msg)
             total_failed_withdraws += failed_count
             
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
             await self.forward_to_group(context, account_message, user_info)
@@ -970,21 +1017,21 @@ class SMS323Automation:
         
         for line in lines:
             line = line.strip()
-            if "🔴 FAILED ORDERS:" in line:
+            if "FAILED ORDERS:" in line:
                 in_failed_section = True
                 continue
             elif "──────────────────────────" in line and in_failed_section:
                 continue
-            elif line.startswith("💳") and in_failed_section:
+            elif line.startswith("GOMONEY") and in_failed_section:
                 try:
-                    bank_name = line.replace("💳", "").strip()
+                    bank_name = line.strip()
                     amount_line = lines[lines.index(line) + 1] if lines.index(line) + 1 < len(lines) else ""
                     date_line = lines[lines.index(line) + 2] if lines.index(line) + 2 < len(lines) else ""
                     order_line = lines[lines.index(line) + 4] if lines.index(line) + 4 < len(lines) else ""
                     
-                    amount = amount_line.replace("💰", "").replace("points", "").strip()
-                    order_date = date_line.replace("📅 Ordered:", "").strip()
-                    order_no = order_line.replace("🆔", "").strip()
+                    amount = amount_line.replace("points", "").strip()
+                    order_date = date_line.replace("Ordered:", "").strip()
+                    order_no = order_line.strip()
                     
                     if amount and order_no:
                         failed_withdraw = {
@@ -1003,11 +1050,11 @@ class SMS323Automation:
     
     async def send_status_summary(self, context, chat_id, user_id, total_failed, user_info):
         """Send status summary with re-submit option"""
-        summary_message = f"\n📋 Bot Status Check Complete!\n"
-        summary_message += f"❌ Total Failed Withdraws Found: {total_failed}\n"
+        summary_message = f"\nBot Status Check Complete!\n"
+        summary_message += f"Total Failed Withdraws Found: {total_failed}\n"
         summary_message += "=" * 40
         
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, summary_message, reply_markup=reply_markup)
         await self.forward_to_group(context, summary_message, user_info)
@@ -1030,36 +1077,36 @@ class SMS323Automation:
         end_idx = start_idx + accounts_per_page
         current_page_withdraws = failed_list[start_idx:end_idx]
         
-        failed_message = f"🔴 Failed Withdraws (Page {page}/{total_pages}):\n"
+        failed_message = f"Failed Withdraws (Page {page}/{total_pages}):\n"
         failed_message += "=" * 50 + "\n\n"
         
         for i, withdraw in enumerate(current_page_withdraws, start_idx + 1):
-            failed_message += f"{i}. 👤 {withdraw['username']}\n"
-            failed_message += f"   💳 {withdraw['bank_name']}\n"
-            failed_message += f"   💰 {withdraw['amount']} points\n"
-            failed_message += f"   📅 {withdraw['order_date']}\n"
-            failed_message += f"   🆔 {withdraw['order_no']}\n"
+            failed_message += f"{i}. {withdraw['username']}\n"
+            failed_message += f"   {withdraw['bank_name']}\n"
+            failed_message += f"   {withdraw['amount']} points\n"
+            failed_message += f"   {withdraw['order_date']}\n"
+            failed_message += f"   {withdraw['order_no']}\n"
             failed_message += "   ─────────────────────────\n"
         
         keyboard = []
         
         if current_page_withdraws:
             keyboard.append([InlineKeyboardButton(
-                "🔄 Re-submit ALL Failed Withdraws", 
+                "Re-submit ALL Failed Withdraws", 
                 callback_data=f"resubmit_all_page_{page}"
             )])
         
         nav_buttons = []
         if page > 1:
-            nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"failed_status_page_{page-1}"))
+            nav_buttons.append(InlineKeyboardButton("Previous", callback_data=f"failed_status_page_{page-1}"))
         
         if page < total_pages:
-            nav_buttons.append(InlineKeyboardButton("Next ➡️", callback_data=f"failed_status_page_{page+1}"))
+            nav_buttons.append(InlineKeyboardButton("Next", callback_data=f"failed_status_page_{page+1}"))
         
         if nav_buttons:
             keyboard.append(nav_buttons)
         
-        keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
+        keyboard.append([InlineKeyboardButton("Main Menu", callback_data="main_menu")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         
@@ -1075,17 +1122,17 @@ class SMS323Automation:
         user_info = f"User: {user.first_name} {user.last_name or ''} (@{user.username or 'N/A'})"
         
         if user_id not in self.failed_withdraws:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.answer("❌ No failed withdraws found!")
-            await query.edit_message_text("❌ No failed withdraws found!", reply_markup=reply_markup)
+            await query.answer("No failed withdraws found!")
+            await query.edit_message_text("No failed withdraws found!", reply_markup=reply_markup)
             return
         
         user_website = self.get_user_website(user_id)
         if not user_website:
-            keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Select Website", callback_data="website_manage"), InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text("❌ No website selected! Please select a website first.", reply_markup=reply_markup)
+            await query.edit_message_text("No website selected! Please select a website first.", reply_markup=reply_markup)
             return
         
         if page is None:
@@ -1098,7 +1145,7 @@ class SMS323Automation:
         end_idx = start_idx + accounts_per_page
         current_page_withdraws = failed_list[start_idx:end_idx]
         
-        initial_message = f"🔄 Re-submitting {len(current_page_withdraws)} failed withdraws..."
+        initial_message = f"Re-submitting {len(current_page_withdraws)} failed withdraws..."
         await query.edit_message_text(initial_message)
         await self.forward_to_group(context, initial_message, user_info)
         
@@ -1113,137 +1160,59 @@ class SMS323Automation:
             account = next((acc for acc in accounts if acc['username'] == username), None)
             
             if not account:
-                resubmit_details.append(f"❌ {username} - Account not found")
+                resubmit_details.append(f"{username} - Account not found")
                 continue
             
             password = account['password']
             
             login_success, login_msg = self.login(username, password, user_id)
             if not login_success:
-                resubmit_details.append(f"❌ {username} - Login failed")
+                resubmit_details.append(f"{username} - Login failed")
                 continue
             
             bank_id, bank_id_msg = self.get_bank_id(user_id)
             if not bank_id:
-                resubmit_details.append(f"❌ {username} - Bank ID not found")
+                resubmit_details.append(f"{username} - Bank ID not found")
                 continue
             
             withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, amount, username, user_id)
             
             if withdraw_success:
                 successful_resubmits += 1
-                resubmit_details.append(f"✅ {username} - Re-submit successful")
+                resubmit_details.append(f"{username} - Re-submit successful")
             else:
-                resubmit_details.append(f"❌ {username} - Re-submit failed")
+                resubmit_details.append(f"{username} - Re-submit failed")
             
             time.sleep(2)
         
-        result_message = f"🔄 Re-submit Results:\n"
-        result_message += f"✅ Successful: {successful_resubmits}/{len(current_page_withdraws)}\n"
+        result_message = f"Re-submit Results:\n"
+        result_message += f"Successful: {successful_resubmits}/{len(current_page_withdraws)}\n"
         result_message += "=" * 40 + "\n"
         
         for detail in resubmit_details:
             result_message += f"{detail}\n"
         
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, result_message, reply_markup=reply_markup)
         await self.forward_to_group(context, result_message, user_info)
         
         await self.send_failed_withdraws_page(context, chat_id, user_id, page)
     
-    def show_status_summary(self, page=1):
-        """Show status summary with pagination - ONLY BOT ORDERS"""
-        status_data = self.load_withdraw_status()
-        
-        if not status_data:
-            return "❌ No bot status data found!"
-        
-        total_success = 0
-        total_pending = 0
-        total_failed = 0
-        total_success_points = 0
-        total_pending_points = 0
-        total_failed_points = 0
-        
-        all_orders = []
-        for username, orders in status_data.items():
-            # Filter ONLY bot orders
-            bot_orders = [o for o in orders if o.get('is_bot_order')]
-            for order in bot_orders:
-                order['username'] = username
-                all_orders.append(order)
-                
-            success_orders = [o for o in bot_orders if o.get('status') == 'success']
-            pending_orders = [o for o in bot_orders if o.get('status') == 'pending']
-            failed_orders = [o for o in bot_orders if o.get('status') == 'failed']
-            
-            total_success += len(success_orders)
-            total_pending += len(pending_orders)
-            total_failed += len(failed_orders)
-            total_success_points += sum(o.get('amount', 0) for o in success_orders)
-            total_pending_points += sum(o.get('amount', 0) for o in pending_orders)
-            total_failed_points += sum(o.get('amount', 0) for o in failed_orders)
-        
-        all_orders.sort(key=lambda x: x.get('date', ''), reverse=True)
-        
-        orders_per_page = 50
-        total_pages = (len(all_orders) + orders_per_page - 1) // orders_per_page
-        
-        start_idx = (page - 1) * orders_per_page
-        end_idx = start_idx + orders_per_page
-        current_page_orders = all_orders[start_idx:end_idx]
-        
-        message = f"📋 BOT Withdraw Status Summary (Page {page}/{total_pages})\n"
-        message += "=" * 60 + "\n\n"
-        
-        message += f"📊 BOT TOTAL SUMMARY:\n"
-        message += f"   ✅ Success Orders: {total_success}\n"
-        message += f"   ⏳ Pending Orders: {total_pending}\n"
-        message += f"   ❌ Failed Orders: {total_failed}\n"
-        message += f"   💰 Total Success Points: {total_success_points}\n"
-        message += f"   ⏳ Total Pending Points: {total_pending_points}\n"
-        message += f"   💸 Total Failed Points: {total_failed_points}\n\n"
-        
-        message += f"🎯 BOT ORDER HISTORY:\n"
-        message += "-" * 50 + "\n\n"
-        
-        if not current_page_orders:
-            message += "No BOT orders found for this page.\n"
-        else:
-            for i, order in enumerate(current_page_orders, start_idx + 1):
-                status = order.get('status', 'unknown')
-                status_emoji = "✅" if status == 'success' else "⏳" if status == 'pending' else "❌"
-                username = order.get('username', 'Unknown')
-                bank_name = order.get('bank_name', 'GOMONEY')
-                amount = order.get('amount', 0)
-                date = order.get('date', 'Unknown date')
-                order_no = order.get('order_no', 'N/A')
-                
-                message += f"{i}. {status_emoji} {username}\n"
-                message += f"   💳 {bank_name} | 💰 {amount} pts\n"
-                message += f"   📅 {date} | 🆔 {order_no}\n"
-                message += "   ─────────────────────────\n"
-        
-        if total_pages > 1:
-            message += f"\n📄 Page {page} of {total_pages} | Total BOT Orders: {len(all_orders)}"
-        
-        return message
-    
     async def show_main_menu_after_processing(self, context, chat_id):
         """Show main menu after processing is complete"""
         keyboard = [
-            [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
-            [InlineKeyboardButton("🚀 Withdraw all accounts", callback_data="process_all")],
-            [InlineKeyboardButton("📊 Check FULL withdraw history", callback_data="check_history")],
-            [InlineKeyboardButton("📋 Show COMPLETE status summary", callback_data="status_summary")],
-            [InlineKeyboardButton("🌐 Select Website", callback_data="website_manage")],
-            [InlineKeyboardButton("🗑️ Clear all data", callback_data="clear_data")],
+            [InlineKeyboardButton("Add new accounts", callback_data="add_accounts")],
+            [InlineKeyboardButton("Withdraw all accounts", callback_data="process_all")],
+            [InlineKeyboardButton("Check FULL withdraw history", callback_data="check_history")],
+            [InlineKeyboardButton("Show COMPLETE status summary", callback_data="status_summary")],
+            [InlineKeyboardButton("Select Website", callback_data="website_manage")],
+            [InlineKeyboardButton("Clear all data", callback_data="clear_data")],
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        welcome_text = """🎯 Automation Withdraw System
-🏦 Bank: GOMONEY
+        welcome_text = """Automation Withdraw System
+Bank: GOMONEY
 
 Select an option:"""
         
@@ -1259,18 +1228,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_website = automation.get_user_website(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
-        [InlineKeyboardButton("🚀 Withdraw all accounts", callback_data="process_all")],
-        [InlineKeyboardButton("📊 Check FULL withdraw history", callback_data="check_history")],
-        [InlineKeyboardButton("📋 Show COMPLETE status summary", callback_data="status_summary")],
-        [InlineKeyboardButton("🌐 Select Website", callback_data="website_manage")],
-        [InlineKeyboardButton("🗑️ Clear all data", callback_data="clear_data")],
+        [InlineKeyboardButton("Add new accounts", callback_data="add_accounts")],
+        [InlineKeyboardButton("Withdraw all accounts", callback_data="process_all")],
+        [InlineKeyboardButton("Check FULL withdraw history", callback_data="check_history")],
+        [InlineKeyboardButton("Show COMPLETE status summary", callback_data="status_summary")],
+        [InlineKeyboardButton("Select Website", callback_data="website_manage")],
+        [InlineKeyboardButton("Clear all data", callback_data="clear_data")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    welcome_text = f"""🎯 Automation Withdraw System
-🌐 Your Website: {user_website['name'] if user_website else 'Not Selected'}
-🏦 Bank: GOMONEY
+    welcome_text = f"""Automation Withdraw System
+Your Website: {user_website['name'] if user_website else 'Not Selected'}
+Bank: GOMONEY
 
 Select an option:"""
     
@@ -1282,18 +1251,18 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_website = automation.get_user_website(user_id)
     
     keyboard = [
-        [InlineKeyboardButton("📝 Add new accounts", callback_data="add_accounts")],
-        [InlineKeyboardButton("🚀 Withdraw all accounts", callback_data="process_all")],
-        [InlineKeyboardButton("📊 Check FULL withdraw history", callback_data="check_history")],
-        [InlineKeyboardButton("📋 Show COMPLETE status summary", callback_data="status_summary")],
-        [InlineKeyboardButton("🌐 Select Website", callback_data="website_manage")],
-        [InlineKeyboardButton("🗑️ Clear all data", callback_data="clear_data")],
+        [InlineKeyboardButton("Add new accounts", callback_data="add_accounts")],
+        [InlineKeyboardButton("Withdraw all accounts", callback_data="process_all")],
+        [InlineKeyboardButton("Check FULL withdraw history", callback_data="check_history")],
+        [InlineKeyboardButton("Show COMPLETE status summary", callback_data="status_summary")],
+        [InlineKeyboardButton("Select Website", callback_data="website_manage")],
+        [InlineKeyboardButton("Clear all data", callback_data="clear_data")],
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    welcome_text = f"""🎯 Automation Withdraw System
-🌐 Your Website: {user_website['name'] if user_website else 'Not Selected'}
-🏦 Bank: GOMONEY
+    welcome_text = f"""Automation Withdraw System
+Your Website: {user_website['name'] if user_website else 'Not Selected'}
+Bank: GOMONEY
 
 Select an option:"""
     
@@ -1308,10 +1277,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if query.data == "add_accounts":
         automation.user_states[user_id] = "waiting_for_accounts"
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            "📝 Account input...\n"
+            "Account input...\n"
             "Format: username:password\n"
             "One account per line\n\n"
             "Example:\n"
@@ -1343,11 +1312,11 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await context.bot.send_message(query.message.chat_id, excel_message)
         
         status_data = automation.load_withdraw_status()
-        total_orders = sum(len([o for o in orders if o.get('is_bot_order')]) for orders in status_data.values())
+        total_orders = sum(len([o for o in orders if o.get("bot_submitted")]) for orders in status_data.values())
         if total_orders > 50:
             keyboard = [
-                [InlineKeyboardButton("Next Page ➡️", callback_data="status_page_2")],
-                [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
+                [InlineKeyboardButton("Next Page", callback_data="status_page_2")],
+                [InlineKeyboardButton("Main Menu", callback_data="main_menu")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(query.message.chat_id, "Navigate to next page:", reply_markup=reply_markup)
@@ -1360,20 +1329,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await send_long_message(context, query.message.chat_id, result)
         
         status_data = automation.load_withdraw_status()
-        total_orders = sum(len([o for o in orders if o.get('is_bot_order')]) for orders in status_data.values())
+        total_orders = sum(len([o for o in orders if o.get("bot_submitted")]) for orders in status_data.values())
         total_pages = (total_orders + 49) // 50
         
         keyboard = []
         if page > 1:
-            keyboard.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"status_page_{page-1}"))
+            keyboard.append(InlineKeyboardButton("Previous", callback_data=f"status_page_{page-1}"))
         if page < total_pages:
-            keyboard.append(InlineKeyboardButton("Next ➡️", callback_data=f"status_page_{page+1}"))
+            keyboard.append(InlineKeyboardButton("Next", callback_data=f"status_page_{page+1}"))
         
         if keyboard:
             reply_markup = InlineKeyboardMarkup([keyboard])
             await context.bot.send_message(query.message.chat_id, "Navigate pages:", reply_markup=reply_markup)
         
-        keyboard_menu = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard_menu = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup_menu = InlineKeyboardMarkup(keyboard_menu)
         await context.bot.send_message(query.message.chat_id, "Main Menu:", reply_markup=reply_markup_menu)
     
@@ -1396,43 +1365,43 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         websites = automation.get_all_websites()
         if 0 <= choice - 1 < len(websites):
             result = automation.manage_websites("change", str(choice), user_id)
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(result, reply_markup=reply_markup)
             await automation.show_main_menu_after_processing(context, query.message.chat_id)
         else:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text("❌ Invalid website selection!", reply_markup=reply_markup)
+            await query.edit_message_text("Invalid website selection!", reply_markup=reply_markup)
     
     elif query.data == "website_delete":
         if user_id == automation.admin_id:
             automation.user_states[user_id] = "waiting_for_website_delete"
             websites = automation.get_all_websites()
             website_list = automation.manage_websites("list", None, user_id)
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await query.edit_message_text(f"{website_list}\n\nEnter website number to delete:", reply_markup=reply_markup)
         else:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await query.edit_message_text("❌ Only admin can delete websites!", reply_markup=reply_markup)
+            await query.edit_message_text("Only admin can delete websites!", reply_markup=reply_markup)
     
     elif query.data == "clear_data":
         keyboard = [
-            [InlineKeyboardButton("✅ Yes, clear all data", callback_data="confirm_clear")],
-            [InlineKeyboardButton("❌ No, go back", callback_data="main_menu")]
+            [InlineKeyboardButton("Yes, clear all data", callback_data="confirm_clear")],
+            [InlineKeyboardButton("No, go back", callback_data="main_menu")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(
-            "⚠️ Are you sure you want to clear ALL data?\n"
+            "Are you sure you want to clear ALL data?\n"
             "This will delete all accounts and withdraw status!",
             reply_markup=reply_markup
         )
     
     elif query.data == "confirm_clear":
         result = automation.clear_all_data()
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(result, reply_markup=reply_markup)
         await automation.show_main_menu_after_processing(context, query.message.chat_id)
@@ -1447,32 +1416,32 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == "add":
             if user_id == automation.admin_id:
                 automation.user_states[user_id] = "waiting_for_website_name"
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
                 await query.edit_message_text("Enter website name:", reply_markup=reply_markup)
             else:
-                keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+                keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
-                await query.edit_message_text("❌ Only admin can add websites!", reply_markup=reply_markup)
+                await query.edit_message_text("Only admin can add websites!", reply_markup=reply_markup)
         elif action == "back":
             await automation.show_main_menu_after_processing(context, query.message.chat_id)
 
 async def show_website_management(query, context, user_id):
     """Show website management options"""
     keyboard = [
-        [InlineKeyboardButton("📋 Select Website", callback_data="website_list")],
+        [InlineKeyboardButton("Select Website", callback_data="website_list")],
     ]
     
     if user_id == automation.admin_id:
-        keyboard.append([InlineKeyboardButton("➕ Add new website", callback_data="website_add")])
-        keyboard.append([InlineKeyboardButton("❌ Delete website", callback_data="website_delete")])
+        keyboard.append([InlineKeyboardButton("Add new website", callback_data="website_add")])
+        keyboard.append([InlineKeyboardButton("Delete website", callback_data="website_delete")])
     
-    keyboard.append([InlineKeyboardButton("↩️ Back to main menu", callback_data="main_menu")])
+    keyboard.append([InlineKeyboardButton("Back to main menu", callback_data="main_menu")])
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     user_website = automation.get_user_website(user_id)
-    current_website_text = f"🌐 Your Current Website: {user_website['name'] if user_website else 'Not Selected'}"
+    current_website_text = f"Your Current Website: {user_website['name'] if user_website else 'Not Selected'}"
     
     await query.edit_message_text(f"{current_website_text}\n\nWebsite Management", reply_markup=reply_markup)
 
@@ -1488,7 +1457,7 @@ async def show_website_list(query, context, user_id):
             callback_data=f"select_website_{i}"
         )])
     
-    keyboard.append([InlineKeyboardButton("↩️ Back", callback_data="website_manage")])
+    keyboard.append([InlineKeyboardButton("Back", callback_data="website_manage")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     
     await query.edit_message_text(message, reply_markup=reply_markup)
@@ -1507,7 +1476,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if state == "waiting_for_accounts":
             del automation.user_states[user_id]
             result = automation.input_accounts(text, user_info)
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Added accounts:\n{text}\n\n{result}", user_info)
@@ -1515,28 +1484,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         elif state == "waiting_for_website_name":
             automation.user_states[user_id] = {"state": "waiting_for_website_url", "name": text}
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("Enter base URL (https://example.club):", reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Website name: {text}", user_info)
         
         elif isinstance(state, dict) and state.get("state") == "waiting_for_website_url":
             automation.user_states[user_id] = {"state": "waiting_for_website_origin", "name": state["name"], "base_url": text}
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("Enter origin (https://example.com):", reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Base URL: {text}", user_info)
         
         elif isinstance(state, dict) and state.get("state") == "waiting_for_website_origin":
             automation.user_states[user_id] = {"state": "waiting_for_website_referer", "name": state["name"], "base_url": state["base_url"], "origin": text}
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("Enter referer (https://example.com):", reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Origin: {text}", user_info)
         
         elif isinstance(state, dict) and state.get("state") == "waiting_for_website_referer":
             automation.user_states[user_id] = {"state": "waiting_for_website_platform", "name": state["name"], "base_url": state["base_url"], "origin": state["origin"], "referer": text}
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text("Enter Platform ID:", reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Referer: {text}", user_info)
@@ -1550,7 +1519,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             del automation.user_states[user_id]
             result = automation.manage_websites("add", [name, base_url, origin, referer, platform_id], user_id)
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Platform ID: {platform_id}\n\n{result}", user_info)
@@ -1559,27 +1528,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif state == "waiting_for_website_delete":
             del automation.user_states[user_id]
             result = automation.manage_websites("delete", text, user_id)
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
             await automation.forward_to_group(context, f"Delete website: {text}\n\n{result}", user_info)
             await automation.show_main_menu_after_processing(context, update.message.chat_id)
     
     else:
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text("Please use the menu buttons to interact with the bot.", reply_markup=reply_markup)
 
 async def send_long_message(context, chat_id, text):
     """Send long messages by splitting them"""
     if len(text) <= 4096:
-        keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+        keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, text, reply_markup=reply_markup)
     else:
         parts = [text[i:i+4096] for i in range(0, len(text), 4096)]
         for part in parts:
-            keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
+            keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await context.bot.send_message(chat_id, part, reply_markup=reply_markup)
             time.sleep(0.5)
@@ -1588,26 +1557,23 @@ def run_bot():
     """Run Telegram bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     
-    print("🤖 Telegram Bot is starting...")
+    print("Telegram Bot is starting...")
     application.run_polling()
 
 def main():
     """Start both Flask and Telegram bot"""
-    print("🚀 Starting Flask server and Telegram Bot...")
+    print("Starting Flask server and Telegram Bot...")
     
-    # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Start Telegram bot in main thread
-    time.sleep(2)  # Give Flask time to start
+    time.sleep(2)
     run_bot()
 
 if __name__ == "__main__":
