@@ -194,13 +194,13 @@ class SMS323Automation:
         
         if action == "list":
             message = "🌐 Website Management\n"
-            message += "=" * 40 + "\n"
+            message += "=" * 10 + "\n"
             
             for i, website in enumerate(websites, 1):
                 user_website = self.get_user_website(user_id)
                 current_indicator = " ✅" if user_website and website == user_website else ""
                 platform_id = website.get('platform_id', 22)
-                message += f"{i}. {website['name']} - {website['base_url']} (Platform: {platform_id}){current_indicator}\n"
+                message += f"{i}. {website['name']} {current_indicator}\n"
             return message
             
         elif action == "add" and data:
@@ -235,7 +235,7 @@ class SMS323Automation:
                     self.set_user_website(user_id, choice)
                     user_website = self.get_user_website(user_id)
                     platform_id = user_website.get('platform_id', 22)
-                    return f"✅ Your website set to: {user_website['name']} (Platform ID: {platform_id})"
+                    return f"✅ Your website set to: {user_website['name']}"
                 else:
                     return "❌ Wrong selection!"
             except ValueError:
@@ -337,7 +337,7 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     user_data = result.get('data', {})
                     balance = user_data.get('score', 0)
-                    message += f"✅ Balance: {balance} points"
+                    message += f"✅ Balance: {balance} points\n"
                     return balance, message
             message += "❌ Balance check failed\n"
             return 0, message
@@ -348,7 +348,7 @@ class SMS323Automation:
     
     def add_bank_account(self, username, password, user_id):
         """Add bank account - 100% GOMONEY ONLY"""
-        message = "💳 Setting up bank account...\n"
+        message = ""
         
         user_website = self.get_user_website(user_id)
         if not user_website:
@@ -373,7 +373,7 @@ class SMS323Automation:
             'password': password
         }
         
-        message += f"📝 Setting Bank: {selected_name} - {bank_name}\n"
+        message += f""
         
         try:
             response = self.session.post(f"{user_website['base_url']}/api/user_bank/add", data=data, timeout=10)
@@ -415,7 +415,7 @@ class SMS323Automation:
     
     def get_bank_id(self, user_id):
         """Get bank ID - FORCE GOMONEY ONLY"""
-        message = "🔍 Finding bank ID...\n"
+        message = ""
         
         user_website = self.get_user_website(user_id)
         if not user_website:
@@ -440,7 +440,7 @@ class SMS323Automation:
                     if gomoney_bank:
                         bank_id = gomoney_bank.get('id')
                         bank_name = gomoney_bank.get('bank_name')
-                        message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                        message += f""
                         return bank_id, message
                     else:
                         message += "❌ GOMONEY bank not found in bank list\n"
@@ -448,7 +448,7 @@ class SMS323Automation:
                             if bank.get('bank_name') == 'GOMONEY':
                                 bank_id = bank.get('id')
                                 bank_name = bank.get('bank_name')
-                                message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                                message += f""
                                 return bank_id, message
                         
                         message += "❌ No GOMONEY bank available\n"
@@ -780,7 +780,7 @@ class SMS323Automation:
             password = account["password"]
             
             account_message = f"⚡ Account {i}/{len(accounts)}: {username}\n"
-            account_message += "-" * 30 + "\n"
+            account_message += "-" * 10 + "\n"
             
             login_success, login_msg = self.login(username, password, user_id)
             account_message += login_msg
@@ -862,11 +862,11 @@ class SMS323Automation:
         total_time = results['total_time']
         failed_accounts = results['failed_accounts']
         
-        summary_message = f"\n🎊 {'='*40}\n"
+        summary_message = f"\n🎊 {'='*10}\n"
         summary_message += f"📈 Summary: {successful}/{total_accounts} accounts successful\n"
         summary_message += f"⏱️ Total time: {total_time:.2f} seconds\n"
         summary_message += f"🚀 Average: {total_time/total_accounts:.2f} seconds per account\n"
-        summary_message += f"{'='*40}"
+        summary_message += f"{'='*10}"
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -892,7 +892,7 @@ class SMS323Automation:
         current_page_accounts = failed_accounts[start_idx:end_idx]
         
         failed_message = f"📋 Failed Accounts Details (Page {page}/{total_pages}):\n"
-        failed_message += "=" * 50 + "\n"
+        failed_message += "=" * 10 + "\n"
         
         for i, account in enumerate(current_page_accounts, start_idx + 1):
             failed_message += f"{i}. {account}\n"
@@ -958,7 +958,7 @@ class SMS323Automation:
             password = account["password"]
             
             account_message = f"\n{i}. {username}\n"
-            account_message += "-" * 20 + "\n"
+            account_message += "-" * 10 + "\n"
             
             login_success, login_msg = self.login(username, password, user_id)
             account_message += login_msg
@@ -1031,7 +1031,7 @@ class SMS323Automation:
         """Send status summary with re-submit option"""
         summary_message = f"\n📋 Bot Status Check Complete!\n"
         summary_message += f"❌ Total Failed Withdraws Found: {total_failed}\n"
-        summary_message += "=" * 40
+        summary_message += "=" * 10
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1057,7 +1057,7 @@ class SMS323Automation:
         current_page_withdraws = failed_list[start_idx:end_idx]
         
         failed_message = f"🔴 Failed Withdraws (Page {page}/{total_pages}):\n"
-        failed_message += "=" * 50 + "\n\n"
+        failed_message += "=" * 10 + "\n\n"
         
         for i, withdraw in enumerate(current_page_withdraws, start_idx + 1):
             failed_message += f"{i}. 👤 {withdraw['username']}\n"
@@ -1166,7 +1166,7 @@ class SMS323Automation:
         
         result_message = f"🔄 Re-submit Results:\n"
         result_message += f"✅ Successful: {successful_resubmits}/{len(current_page_withdraws)}\n"
-        result_message += "=" * 40 + "\n"
+        result_message += "=" * 10 + "\n"
         
         for detail in resubmit_details:
             result_message += f"{detail}\n"
@@ -1219,7 +1219,7 @@ class SMS323Automation:
         current_page_orders = all_orders[start_idx:end_idx]
         
         message = f"📋 BOT Withdraw Status Summary (Page {page}/{total_pages})\n"
-        message += "=" * 60 + "\n\n"
+        message += "=" * 10 + "\n\n"
         
         message += f"📊 BOT TOTAL SUMMARY:\n"
         message += f"   ✅ Success Orders: {total_success}\n"
@@ -1230,7 +1230,7 @@ class SMS323Automation:
         message += f"   💸 Total Failed Points: {total_failed_points}\n\n"
         
         message += f"🎯 BOT ORDER HISTORY:\n"
-        message += "-" * 50 + "\n\n"
+        message += "-" * 10 + "\n\n"
         
         if not current_page_orders:
             message += "No orders found for this page.\n"
@@ -1267,7 +1267,7 @@ class SMS323Automation:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         welcome_text = """🎯 Automation Withdraw System
-🏦 Bank: GOMONEY
+🏦 Bank Owner: @NouTrixXD
 
 Select an option:"""
         
@@ -1275,7 +1275,7 @@ Select an option:"""
 
 # Global automation instance
 automation = SMS323Automation()
-BOT_TOKEN = "7390288812:AAGsGZriy4dprHYmQoRUZltMCmvTUitpz4I"
+BOT_TOKEN = "8067241388:AAGEn3M7HfcvF3_rablyn9mq9AHUsGzxst4"
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Send welcome message with main menu"""
@@ -1294,7 +1294,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_text = f"""🎯 Automation Withdraw System
 🌐 Your Website: {user_website['name'] if user_website else 'Not Selected'}
-🏦 Bank: GOMONEY
+🏦 Bank Owner: @NouTrixXD
 
 Select an option:"""
     
@@ -1317,7 +1317,7 @@ async def menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     welcome_text = f"""🎯 Automation Withdraw System
 🌐 Your Website: {user_website['name'] if user_website else 'Not Selected'}
-🏦 Bank: GOMONEY
+🏦 Bank Owner: @NouTrixXD
 
 Select an option:"""
     
