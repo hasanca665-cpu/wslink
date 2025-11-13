@@ -3,13 +3,13 @@ import json
 import time
 import random
 import os
+import csv
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from flask import Flask
 import threading
-import pandas as pd
-from io import BytesIO
+from io import StringIO, BytesIO
 
 # Flask app for Render
 app = Flask(__name__)
@@ -27,27 +27,42 @@ def run_flask():
     port = int(os.environ.get("PORT", 10000))
     app.run(host="0.0.0.0", port=port, debug=False)
 
-# Keep the rest of your existing code exactly the same
 class SMS323Automation:
     def __init__(self):
         self.accounts_file = "accounts.json"
         self.withdraw_file = "withdraw_status.json"
         self.websites_file = "websites.json"
         self.settings_file = "settings.json"
-        self.user_websites_file = "user_websites.json"  # New: User-specific websites
+        self.user_websites_file = "user_websites.json"
+        self.bot_orders_file = "bot_orders.json"  # New file to persist bot orders
         self.current_website = None
-        self.withdraw_platform_id = 22  # Default platform ID
+        self.withdraw_platform_id = 22
         self.load_settings()
         self.load_websites()
-        self.load_user_websites()  # New: Load user websites
+        self.load_user_websites()
+        self.load_bot_orders()  # Load bot orders from file
         self.session = requests.Session()
         self.update_headers()
         self.user_states = {}
         self.processing_results = {}
         self.failed_withdraws = {}
-        self.bot_submitted_orders = set()
-        self.admin_id = 5624278091  # Admin user ID
-        self.forward_group_id = -1003349774475  # Forward group chat ID
+        self.admin_id = 5624278091
+        self.forward_group_id = -1003349774475
+    
+    def load_bot_orders(self):
+        """Load bot orders from file to persist across restarts"""
+        if os.path.exists(self.bot_orders_file):
+            with open(self.bot_orders_file, 'r') as f:
+                data = json.load(f)
+                self.bot_submitted_orders = set(data.get('orders', []))
+        else:
+            self.bot_submitted_orders = set()
+    
+    def save_bot_orders(self):
+        """Save bot orders to file"""
+        data = {'orders': list(self.bot_submitted_orders)}
+        with open(self.bot_orders_file, 'w') as f:
+            json.dump(data, f, indent=2)
     
     def load_user_websites(self):
         """Load user-specific website selections"""
@@ -100,7 +115,6 @@ class SMS323Automation:
                 websites = json.load(f)
                 if websites:
                     self.current_website = websites[0]
-                    # Set platform ID from current website
                     self.withdraw_platform_id = self.current_website.get('platform_id', 22)
     
     def save_websites(self, websites):
@@ -165,12 +179,15 @@ class SMS323Automation:
         """Clear all data"""
         message = "🗑️ Clearing all data...\n"
         
-        files_to_clear = [self.accounts_file, self.withdraw_file]
+        files_to_clear = [self.accounts_file, self.withdraw_file, self.bot_orders_file]
         
         for file in files_to_clear:
             if os.path.exists(file):
                 os.remove(file)
                 message += f"✅ {file} deleted\n"
+        
+        # Reset bot orders set
+        self.bot_submitted_orders = set()
         
         message += "🎉 All data cleared!"
         return message
@@ -196,7 +213,7 @@ class SMS323Automation:
         
         if action == "list":
             message = "🌐 Website Management\n"
-            message += "=" * 20 + "\n"
+            message += "=" * 40 + "\n"
             
             for i, website in enumerate(websites, 1):
                 user_website = self.get_user_website(user_id)
@@ -206,7 +223,6 @@ class SMS323Automation:
             return message
             
         elif action == "add" and data:
-            # Check if user is admin
             if user_id != self.admin_id:
                 return "❌ Only admin can add websites!"
             
@@ -235,7 +251,6 @@ class SMS323Automation:
             try:
                 choice = int(data) - 1
                 if 0 <= choice < len(websites):
-                    # Set website for specific user only
                     self.set_user_website(user_id, choice)
                     user_website = self.get_user_website(user_id)
                     platform_id = user_website.get('platform_id', 22)
@@ -246,7 +261,6 @@ class SMS323Automation:
                 return "❌ Please enter a number!"
                 
         elif action == "delete" and data:
-            # Check if user is admin
             if user_id != self.admin_id:
                 return "❌ Only admin can delete websites!"
             
@@ -255,7 +269,6 @@ class SMS323Automation:
                 if 0 <= choice < len(websites):
                     website_to_delete = websites[choice]
                     
-                    # Remove from user selections if anyone was using it
                     for user_id_str in list(self.user_websites.keys()):
                         if self.user_websites[user_id_str] == choice:
                             del self.user_websites[user_id_str]
@@ -273,7 +286,6 @@ class SMS323Automation:
     
     def input_accounts(self, accounts_text, user_info=""):
         """Input multiple accounts at once - Auto clear old data"""
-        # Clear old data automatically when new accounts are added
         if os.path.exists(self.accounts_file):
             os.remove(self.accounts_file)
         if os.path.exists(self.withdraw_file):
@@ -301,7 +313,6 @@ class SMS323Automation:
         """Login function - FAST VERSION"""
         message = f"🔐 {username} - Processing...\n"
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected! Please select a website first.\n"
@@ -310,7 +321,6 @@ class SMS323Automation:
         data = {'username': username, 'password': password}
         
         try:
-            # Update headers with user's website
             self.update_headers(user_website)
             response = self.session.post(f"{user_website['base_url']}/api/user/signIn", data=data, timeout=10)
             
@@ -333,7 +343,6 @@ class SMS323Automation:
         """Get user information - FAST VERSION"""
         message = ""
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected!\n"
@@ -347,7 +356,6 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     user_data = result.get('data', {})
                     balance = user_data.get('score', 0)
-                    user_id = user_data.get('id', 'N/A')
                     message += f"✅ Balance: {balance} points"
                     return balance, message
             message += "❌ Balance check failed\n"
@@ -361,7 +369,6 @@ class SMS323Automation:
         """Add bank account - 100% GOMONEY ONLY"""
         message = "💳 Setting up bank account...\n"
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected!\n"
@@ -407,7 +414,6 @@ class SMS323Automation:
     
     def check_existing_banks_fast(self, user_id):
         """Check existing banks quickly"""
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             return None
@@ -430,7 +436,6 @@ class SMS323Automation:
         """Get bank ID - FORCE GOMONEY ONLY"""
         message = "🔍 Finding bank ID...\n"
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected!\n"
@@ -444,7 +449,6 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     banks = result.get('data', [])
                     
-                    # FORCE GOMONEY BANK ONLY - Find GOMONEY bank specifically
                     gomoney_bank = None
                     for bank in banks:
                         if (bank.get('bank_name') == 'GOMONEY' and 
@@ -455,12 +459,10 @@ class SMS323Automation:
                     if gomoney_bank:
                         bank_id = gomoney_bank.get('id')
                         bank_name = gomoney_bank.get('bank_name')
-                        bank_number = gomoney_bank.get('bank_card')
                         message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
                         return bank_id, message
                     else:
                         message += "❌ GOMONEY bank not found in bank list\n"
-                        # If GOMONEY not found, try to find any bank with GOMONEY name
                         for bank in banks:
                             if bank.get('bank_name') == 'GOMONEY':
                                 bank_id = bank.get('id')
@@ -478,10 +480,9 @@ class SMS323Automation:
             return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
-        """Submit withdraw - FAST VERSION"""
+        """Submit withdraw - FIXED ORDER TRACKING"""
         message = f"🚀 Submitting withdraw: {amount} points...\n"
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected!\n"
@@ -495,17 +496,31 @@ class SMS323Automation:
             if response.status_code == 200:
                 result = response.json()
                 if result.get('code') == 1:
-                    # Store the order ID for tracking
-                    order_data = result.get('data') or {}
+                    # FIXED: Properly extract order ID from response
+                    order_data = result.get('data', {})
                     order_id = order_data.get('id')
+                    
                     if order_id:
-                        self.bot_submitted_orders.add(order_id)
-                    message += "🎉 Withdraw submitted successfully!\n"
-                    return True, message
+                        # Store with username for better tracking
+                        order_key = f"{username}_{order_id}"
+                        self.bot_submitted_orders.add(order_key)
+                        self.save_bot_orders()  # Save to file
+                        message += f"✅ Order tracked: {order_id}\n"
+                        message += "🎉 Withdraw submitted successfully!\n"
+                        return True, message
+                    else:
+                        # If no order ID, still consider it successful but track by amount and timestamp
+                        backup_key = f"{username}_{amount}_{int(time.time())}"
+                        self.bot_submitted_orders.add(backup_key)
+                        self.save_bot_orders()
+                        message += "⚠️ Order submitted but ID not found - using backup tracking\n"
+                        message += "🎉 Withdraw submitted successfully!\n"
+                        return True, message
                 else:
-                    message += f"❌ Withdraw submit failed: {result.get('msg', 'Unknown error')}\n"
+                    error_msg = result.get('msg', 'Unknown error')
+                    message += f"❌ Withdraw submit failed: {error_msg}\n"
                     return False, message
-            message += "❌ Withdraw submit failed\n"
+            message += "❌ Withdraw submit failed - No response\n"
             return False, message
                 
         except Exception as e:
@@ -513,10 +528,9 @@ class SMS323Automation:
             return False, message
     
     def check_withdraw_status(self, username, user_id):
-        """Check withdraw status - ONLY BOT-SUBMITTED ORDERS"""
+        """Check withdraw status - IMPROVED BOT ORDER TRACKING"""
         message = f"📊 {username} - Checking withdraw status...\n"
         
-        # Use user-specific website
         user_website = self.get_user_website(user_id)
         if not user_website:
             message += "❌ No website selected!\n"
@@ -538,10 +552,28 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     orders = result.get('data', [])
                     
-                    # Filter only bot-submitted orders
-                    bot_orders = [order for order in orders if order.get('id') in self.bot_submitted_orders]
+                    # IMPROVED: Better bot order tracking
+                    bot_orders = []
+                    all_orders_info = ""
+                    
+                    for order in orders:
+                        order_id = order.get('id')
+                        order_key = f"{username}_{order_id}"
+                        
+                        # Check if this order was submitted by bot
+                        if order_key in self.bot_submitted_orders:
+                            bot_orders.append(order)
+                            all_orders_info += f"   ✅ BOT ORDER - ID: {order_id}, Amount: {order.get('score')}, Status: {order.get('status')}\n"
+                        else:
+                            all_orders_info += f"   👤 MANUAL ORDER - ID: {order_id}, Amount: {order.get('score')}, Status: {order.get('status')}\n"
                     
                     message += f"📦 Bot Orders Found: {len(bot_orders)}/{len(orders)}\n"
+                    message += f"🔍 Total orders in system: {len(orders)}\n"
+                    
+                    # Show all orders for transparency
+                    if orders:
+                        message += f"📋 All Orders Details:\n"
+                        message += all_orders_info
                     
                     success_orders = []
                     pending_orders = []
@@ -647,7 +679,7 @@ class SMS323Automation:
             return False, message
     
     def update_status_data(self, username, orders):
-        """Update status data with proper bank_name and status - FIXED DUPLICATE ISSUE"""
+        """Update status data with proper bank_name and status"""
         status_data = self.load_withdraw_status()
         
         if username not in status_data:
@@ -677,68 +709,54 @@ class SMS323Automation:
         self.save_withdraw_status(status_data)
     
     def generate_excel_report(self):
-        """Generate Excel report in the specified format"""
+        """Generate CSV report in the specified format"""
         status_data = self.load_withdraw_status()
         
         if not status_data:
-            return None, "❌ No status data available for Excel report"
+            return None, "❌ No status data available for report"
         
-        # Prepare data for Excel
-        excel_data = []
+        # Prepare data for CSV
+        csv_data = []
+        headers = ['Phone Number', 'Success Orders', 'Failed Orders', 'Points', 'Recent Activity', 'Timestamp', 'Prefix']
         
         for username, orders in status_data.items():
             success_orders = [o for o in orders if o.get('status') == 'success']
             failed_orders = [o for o in orders if o.get('status') == 'failed']
             
-            # Get the most recent order for timestamp and bank name
             recent_order = None
             if orders:
                 recent_order = max(orders, key=lambda x: x.get('date', ''))
             
-            # Extract prefix (first 3 digits of phone number)
             prefix = username[:3] if len(username) >= 3 else username
             
-            row = {
-                'Phone Number': username,
-                'Success Orders': len(success_orders),
-                'Failed Orders': len(failed_orders),
-                'Points': sum(order.get('amount', 0) for order in success_orders),
-                'Recent Activity': recent_order.get('bank_name', 'GOMONEY') if recent_order else 'GOMONEY',
-                'Timestamp': recent_order.get('date', '') if recent_order else '',
-                'Prefix': prefix
-            }
-            excel_data.append(row)
-        
-        # Create DataFrame
-        df = pd.DataFrame(excel_data)
+            row = [
+                username,
+                len(success_orders),
+                len(failed_orders),
+                sum(order.get('amount', 0) for order in success_orders),
+                recent_order.get('bank_name', 'GOMONEY') if recent_order else 'GOMONEY',
+                recent_order.get('date', '') if recent_order else '',
+                prefix
+            ]
+            csv_data.append(row)
         
         # Sort by Timestamp (newest first)
-        if not df.empty and 'Timestamp' in df.columns:
-            df['Timestamp'] = pd.to_datetime(df['Timestamp'], errors='coerce')
-            df = df.sort_values('Timestamp', ascending=False)
-            df['Timestamp'] = df['Timestamp'].dt.strftime('%Y-%m-%d %H:%M:%S')
+        csv_data.sort(key=lambda x: x[5] if x[5] else '', reverse=True)
         
-        # Create Excel file in memory
-        output = BytesIO()
-        with pd.ExcelWriter(output, engine='openpyxl') as writer:
-            df.to_excel(writer, sheet_name='Withdraw Report', index=False)
-            
-            # Auto-adjust column widths
-            worksheet = writer.sheets['Withdraw Report']
-            for column in worksheet.columns:
-                max_length = 0
-                column_letter = column[0].column_letter
-                for cell in column:
-                    try:
-                        if len(str(cell.value)) > max_length:
-                            max_length = len(str(cell.value))
-                    except:
-                        pass
-                adjusted_width = (max_length + 2)
-                worksheet.column_dimensions[column_letter].width = adjusted_width
+        # Create CSV file in memory
+        output = StringIO()
+        writer = csv.writer(output)
+        writer.writerow(headers)
+        writer.writerows(csv_data)
         
-        output.seek(0)
-        return output, f"✅ Excel report generated with {len(excel_data)} accounts"
+        csv_content = output.getvalue()
+        output.close()
+        
+        # Convert to bytes for file sending
+        csv_bytes = BytesIO(csv_content.encode('utf-8'))
+        csv_bytes.seek(0)
+        
+        return csv_bytes, f"✅ CSV report generated with {len(csv_data)} accounts"
     
     async def process_all_accounts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process all accounts with individual messages for each account"""
@@ -752,7 +770,6 @@ class SMS323Automation:
         
         user_id = update.callback_query.from_user.id
         
-        # Check if user has selected a website
         user_website = self.get_user_website(user_id)
         if not user_website:
             keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
@@ -762,11 +779,9 @@ class SMS323Automation:
         
         chat_id = update.callback_query.message.chat_id
         
-        # Get user info for forwarding
         user = update.callback_query.from_user
         user_info = f"User: {user.first_name} {user.last_name or ''} (@{user.username or 'N/A'})"
         
-        # Initialize results storage
         self.processing_results[user_id] = {
             'successful': 0,
             'total': len(accounts),
@@ -787,11 +802,9 @@ class SMS323Automation:
             username = account["username"]
             password = account["password"]
             
-            # Send individual account processing message
             account_message = f"⚡ Account {i}/{len(accounts)}: {username}\n"
             account_message += "-" * 30 + "\n"
             
-            # Login
             login_success, login_msg = self.login(username, password, user_id)
             account_message += login_msg
             
@@ -803,7 +816,6 @@ class SMS323Automation:
                 await self.forward_to_group(context, account_message, user_info)
                 continue
             
-            # Balance check
             balance, balance_msg = self.get_user_info(user_id)
             account_message += balance_msg
             
@@ -819,7 +831,6 @@ class SMS323Automation:
             withdraw_amount = balance - 200
             account_message += f"📊 Withdraw amount: {withdraw_amount} points\n"
             
-            # Bank setup
             bank_success, bank_msg = self.add_bank_account(username, password, user_id)
             account_message += bank_msg
             if not bank_success:
@@ -830,7 +841,6 @@ class SMS323Automation:
                 await self.forward_to_group(context, account_message, user_info)
                 continue
             
-            # Get bank ID
             bank_id, bank_id_msg = self.get_bank_id(user_id)
             account_message += bank_id_msg
             if not bank_id:
@@ -841,7 +851,6 @@ class SMS323Automation:
                 await self.forward_to_group(context, account_message, user_info)
                 continue
             
-            # Submit withdraw
             withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, withdraw_amount, username, user_id)
             account_message += withdraw_msg
             
@@ -856,16 +865,13 @@ class SMS323Automation:
             await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
             await self.forward_to_group(context, account_message, user_info)
             
-            # Small delay between accounts
             if i < len(accounts):
                 time.sleep(2)
         
-        # Store failed accounts for pagination
         self.processing_results[user_id]['successful'] = successful_accounts
         self.processing_results[user_id]['failed_accounts'] = failed_details
         self.processing_results[user_id]['total_time'] = time.time() - self.processing_results[user_id]['start_time']
         
-        # Send final summary
         await self.send_processing_summary(context, chat_id, user_id, user_info)
     
     async def send_processing_summary(self, context, chat_id, user_id, user_info):
@@ -879,19 +885,17 @@ class SMS323Automation:
         total_time = results['total_time']
         failed_accounts = results['failed_accounts']
         
-        # Summary message
-        summary_message = f"\n🎊 {'='*20}\n"
+        summary_message = f"\n🎊 {'='*40}\n"
         summary_message += f"📈 Summary: {successful}/{total_accounts} accounts successful\n"
         summary_message += f"⏱️ Total time: {total_time:.2f} seconds\n"
         summary_message += f"🚀 Average: {total_time/total_accounts:.2f} seconds per account\n"
-        summary_message += f"{'='*20}"
+        summary_message += f"{'='*40}"
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, summary_message, reply_markup=reply_markup)
         await self.forward_to_group(context, summary_message, user_info)
         
-        # Send failed accounts with pagination if any
         if failed_accounts:
             await self.send_failed_accounts_page(context, chat_id, user_id, 1)
         else:
@@ -928,7 +932,6 @@ class SMS323Automation:
         else:
             reply_markup = None
         
-        # Add main menu button at the end
         menu_button = [InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]
         if reply_markup:
             reply_markup.inline_keyboard.append(menu_button)
@@ -949,7 +952,6 @@ class SMS323Automation:
         
         user_id = update.callback_query.from_user.id
         
-        # Check if user has selected a website
         user_website = self.get_user_website(user_id)
         if not user_website:
             keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
@@ -959,11 +961,9 @@ class SMS323Automation:
         
         chat_id = update.callback_query.message.chat_id
         
-        # Get user info for forwarding
         user = update.callback_query.from_user
         user_info = f"User: {user.first_name} {user.last_name or ''} (@{user.username or 'N/A'})"
         
-        # Initialize failed withdraws storage
         self.failed_withdraws[user_id] = {
             'failed_list': [],
             'current_page': 1,
@@ -980,7 +980,6 @@ class SMS323Automation:
             username = account["username"]
             password = account["password"]
             
-            # Send individual account status message
             account_message = f"\n{i}. {username}\n"
             account_message += "-" * 20 + "\n"
             
@@ -998,7 +997,6 @@ class SMS323Automation:
             status_success, status_msg = self.check_withdraw_status(username, user_id)
             account_message += status_msg
             
-            # Extract failed withdraws from status message
             failed_count = await self.extract_failed_withdraws(user_id, username, status_msg)
             total_failed_withdraws += failed_count
             
@@ -1007,18 +1005,15 @@ class SMS323Automation:
             await context.bot.send_message(chat_id, account_message, reply_markup=reply_markup)
             await self.forward_to_group(context, account_message, user_info)
             
-            # Small delay between accounts
             if i < len(accounts):
                 time.sleep(1)
         
-        # Send final summary with re-submit option if failed withdraws exist
         await self.send_status_summary(context, chat_id, user_id, total_failed_withdraws, user_info)
     
     async def extract_failed_withdraws(self, user_id, username, status_msg):
         """Extract failed withdraws from status message for re-submit"""
         failed_count = 0
         
-        # Look for failed orders in the status message
         lines = status_msg.split('\n')
         in_failed_section = False
         
@@ -1030,10 +1025,8 @@ class SMS323Automation:
             elif "──────────────────────────" in line and in_failed_section:
                 continue
             elif line.startswith("💳") and in_failed_section:
-                # Extract failed order details
                 try:
                     bank_name = line.replace("💳", "").strip()
-                    # Get next lines for amount and order details
                     amount_line = lines[lines.index(line) + 1] if lines.index(line) + 1 < len(lines) else ""
                     date_line = lines[lines.index(line) + 2] if lines.index(line) + 2 < len(lines) else ""
                     order_line = lines[lines.index(line) + 4] if lines.index(line) + 4 < len(lines) else ""
@@ -1061,14 +1054,13 @@ class SMS323Automation:
         """Send status summary with re-submit option"""
         summary_message = f"\n📋 Bot Status Check Complete!\n"
         summary_message += f"❌ Total Failed Withdraws Found: {total_failed}\n"
-        summary_message += "=" * 20
+        summary_message += "=" * 40
         
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await context.bot.send_message(chat_id, summary_message, reply_markup=reply_markup)
         await self.forward_to_group(context, summary_message, user_info)
         
-        # Send failed withdraws with pagination if any
         if total_failed > 0:
             await self.send_failed_withdraws_page(context, chat_id, user_id, 1)
         else:
@@ -1100,14 +1092,12 @@ class SMS323Automation:
         
         keyboard = []
         
-        # Re-submit all button
         if current_page_withdraws:
             keyboard.append([InlineKeyboardButton(
                 "🔄 Re-submit ALL Failed Withdraws", 
                 callback_data=f"resubmit_all_page_{page}"
             )])
         
-        # Navigation buttons
         nav_buttons = []
         if page > 1:
             nav_buttons.append(InlineKeyboardButton("⬅️ Previous", callback_data=f"failed_status_page_{page-1}"))
@@ -1118,7 +1108,6 @@ class SMS323Automation:
         if nav_buttons:
             keyboard.append(nav_buttons)
         
-        # Main menu button
         keyboard.append([InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")])
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -1131,7 +1120,6 @@ class SMS323Automation:
         user_id = query.from_user.id
         chat_id = query.message.chat_id
         
-        # Get user info for forwarding
         user = query.from_user
         user_info = f"User: {user.first_name} {user.last_name or ''} (@{user.username or 'N/A'})"
         
@@ -1142,7 +1130,6 @@ class SMS323Automation:
             await query.edit_message_text("❌ No failed withdraws found!", reply_markup=reply_markup)
             return
         
-        # Check if user has selected a website
         user_website = self.get_user_website(user_id)
         if not user_website:
             keyboard = [[InlineKeyboardButton("🌐 Select Website", callback_data="website_manage"), InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
@@ -1151,7 +1138,6 @@ class SMS323Automation:
             return
         
         if page is None:
-            # Extract page number from callback data
             page = int(query.data.split("_")[3])
         
         failed_list = self.failed_withdraws[user_id]['failed_list']
@@ -1172,7 +1158,6 @@ class SMS323Automation:
             username = withdraw['username']
             amount = withdraw['amount'].replace('points', '').strip()
             
-            # Find account password
             accounts = self.load_accounts()
             account = next((acc for acc in accounts if acc['username'] == username), None)
             
@@ -1182,19 +1167,16 @@ class SMS323Automation:
             
             password = account['password']
             
-            # Login
             login_success, login_msg = self.login(username, password, user_id)
             if not login_success:
                 resubmit_details.append(f"❌ {username} - Login failed")
                 continue
             
-            # Get bank ID
             bank_id, bank_id_msg = self.get_bank_id(user_id)
             if not bank_id:
                 resubmit_details.append(f"❌ {username} - Bank ID not found")
                 continue
             
-            # Submit withdraw
             withdraw_success, withdraw_msg = self.submit_withdraw(bank_id, amount, username, user_id)
             
             if withdraw_success:
@@ -1203,13 +1185,11 @@ class SMS323Automation:
             else:
                 resubmit_details.append(f"❌ {username} - Re-submit failed")
             
-            # Small delay between re-submits
             time.sleep(2)
         
-        # Send re-submit results
         result_message = f"🔄 Re-submit Results:\n"
         result_message += f"✅ Successful: {successful_resubmits}/{len(current_page_withdraws)}\n"
-        result_message += "=" * 20 + "\n"
+        result_message += "=" * 40 + "\n"
         
         for detail in resubmit_details:
             result_message += f"{detail}\n"
@@ -1219,7 +1199,6 @@ class SMS323Automation:
         await context.bot.send_message(chat_id, result_message, reply_markup=reply_markup)
         await self.forward_to_group(context, result_message, user_info)
         
-        # Show failed withdraws page again
         await self.send_failed_withdraws_page(context, chat_id, user_id, page)
     
     def show_status_summary(self, page=1):
@@ -1229,7 +1208,6 @@ class SMS323Automation:
         if not status_data:
             return "❌ No bot status data found!"
         
-        # Calculate totals
         total_success = 0
         total_pending = 0
         total_failed = 0
@@ -1254,10 +1232,8 @@ class SMS323Automation:
             total_pending_points += sum(o.get('amount', 0) for o in pending_orders)
             total_failed_points += sum(o.get('amount', 0) for o in failed_orders)
         
-        # Sort by date (newest first)
         all_orders.sort(key=lambda x: x.get('date', ''), reverse=True)
         
-        # Pagination
         orders_per_page = 50
         total_pages = (len(all_orders) + orders_per_page - 1) // orders_per_page
         
@@ -1268,7 +1244,6 @@ class SMS323Automation:
         message = f"📋 BOT Withdraw Status Summary (Page {page}/{total_pages})\n"
         message += "=" * 60 + "\n\n"
         
-        # BOT TOTAL SUMMARY at the beginning of each page
         message += f"📊 BOT TOTAL SUMMARY:\n"
         message += f"   ✅ Success Orders: {total_success}\n"
         message += f"   ⏳ Pending Orders: {total_pending}\n"
@@ -1297,7 +1272,6 @@ class SMS323Automation:
                 message += f"   📅 {date} | 🆔 {order_no}\n"
                 message += "   ─────────────────────────\n"
         
-        # Add pagination info
         if total_pages > 1:
             message += f"\n📄 Page {page} of {total_pages} | Total Orders: {len(all_orders)}"
         
@@ -1401,24 +1375,20 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await automation.check_all_status(update, context)
     
     elif query.data == "status_summary":
-        # Show the normal status summary first
         result = automation.show_status_summary(page=1)
         await send_long_message(context, query.message.chat_id, result)
         
-        # Generate and send Excel file
         excel_file, excel_message = automation.generate_excel_report()
         if excel_file:
-            # Send Excel file
             await context.bot.send_document(
                 chat_id=query.message.chat_id,
                 document=excel_file,
-                filename=f"withdraw_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx",
+                filename=f"withdraw_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
                 caption=excel_message
             )
         else:
             await context.bot.send_message(query.message.chat_id, excel_message)
         
-        # Add pagination buttons if needed
         status_data = automation.load_withdraw_status()
         total_orders = sum(len(orders) for orders in status_data.values())
         if total_orders > 50:
@@ -1436,7 +1406,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = automation.show_status_summary(page=page)
         await send_long_message(context, query.message.chat_id, result)
         
-        # Pagination buttons
         status_data = automation.load_withdraw_status()
         total_orders = sum(len(orders) for orders in status_data.values())
         total_pages = (total_orders + 49) // 50
@@ -1470,7 +1439,6 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await show_website_management(query, context, user_id)
     
     elif query.data.startswith("select_website_"):
-        # Handle website selection
         choice = int(query.data.split("_")[2])
         websites = automation.get_all_websites()
         if 0 <= choice - 1 < len(websites):
@@ -1542,7 +1510,6 @@ async def show_website_management(query, context, user_id):
         [InlineKeyboardButton("📋 Select Website", callback_data="website_list")],
     ]
     
-    # Only show add/delete options for admin
     if user_id == automation.admin_id:
         keyboard.append([InlineKeyboardButton("➕ Add new website", callback_data="website_add")])
         keyboard.append([InlineKeyboardButton("❌ Delete website", callback_data="website_delete")])
@@ -1578,7 +1545,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     text = update.message.text
     
-    # Get user info for forwarding
     user = update.message.from_user
     user_info = f"User: {user.first_name} {user.last_name or ''} (@{user.username or 'N/A'})"
     
@@ -1669,7 +1635,6 @@ def run_bot():
     """Run Telegram bot"""
     application = Application.builder().token(BOT_TOKEN).build()
     
-    # Add handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("menu", menu))
     application.add_handler(CallbackQueryHandler(button_handler))
@@ -1682,13 +1647,11 @@ def main():
     """Start both Flask and Telegram bot"""
     print("🚀 Starting Flask server and Telegram Bot...")
     
-    # Start Flask in a separate thread
     flask_thread = threading.Thread(target=run_flask)
     flask_thread.daemon = True
     flask_thread.start()
     
-    # Start Telegram bot in main thread
-    time.sleep(2)  # Give Flask time to start
+    time.sleep(2)
     run_bot()
 
 if __name__ == "__main__":
