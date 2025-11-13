@@ -34,13 +34,13 @@ class SMS323Automation:
         self.websites_file = "websites.json"
         self.settings_file = "settings.json"
         self.user_websites_file = "user_websites.json"
-        self.bot_orders_file = "bot_orders.json"  # New file to persist bot orders
+        self.bot_orders_file = "bot_orders.json"
         self.current_website = None
         self.withdraw_platform_id = 22
         self.load_settings()
         self.load_websites()
         self.load_user_websites()
-        self.load_bot_orders()  # Load bot orders from file
+        self.load_bot_orders()
         self.session = requests.Session()
         self.update_headers()
         self.user_states = {}
@@ -186,7 +186,6 @@ class SMS323Automation:
                 os.remove(file)
                 message += f"✅ {file} deleted\n"
         
-        # Reset bot orders set
         self.bot_submitted_orders = set()
         
         message += "🎉 All data cleared!"
@@ -480,7 +479,7 @@ class SMS323Automation:
             return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
-        """Submit withdraw - FIXED ORDER TRACKING"""
+        """Submit withdraw - FIXED ERROR HANDLING"""
         message = f"🚀 Submitting withdraw: {amount} points...\n"
         
         user_website = self.get_user_website(user_id)
@@ -493,23 +492,29 @@ class SMS323Automation:
         try:
             response = self.session.post(f"{user_website['base_url']}/api/withdraw_platform/submit", data=data, timeout=10)
             
+            if response is None:
+                message += "❌ No response from server - connection failed\n"
+                return False, message
+                
             if response.status_code == 200:
                 result = response.json()
+                
+                if result is None:
+                    message += "❌ Invalid response from server\n"
+                    return False, message
+                    
                 if result.get('code') == 1:
-                    # FIXED: Properly extract order ID from response
                     order_data = result.get('data', {})
                     order_id = order_data.get('id')
                     
                     if order_id:
-                        # Store with username for better tracking
                         order_key = f"{username}_{order_id}"
                         self.bot_submitted_orders.add(order_key)
-                        self.save_bot_orders()  # Save to file
+                        self.save_bot_orders()
                         message += f"✅ Order tracked: {order_id}\n"
                         message += "🎉 Withdraw submitted successfully!\n"
                         return True, message
                     else:
-                        # If no order ID, still consider it successful but track by amount and timestamp
                         backup_key = f"{username}_{amount}_{int(time.time())}"
                         self.bot_submitted_orders.add(backup_key)
                         self.save_bot_orders()
@@ -520,8 +525,14 @@ class SMS323Automation:
                     error_msg = result.get('msg', 'Unknown error')
                     message += f"❌ Withdraw submit failed: {error_msg}\n"
                     return False, message
-            message += "❌ Withdraw submit failed - No response\n"
-            return False, message
+            else:
+                message += f"❌ Withdraw submit failed - Status code: {response.status_code}\n"
+                try:
+                    error_text = response.text[:100]
+                    message += f"📋 Response: {error_text}\n"
+                except:
+                    message += "📋 No response text available\n"
+                return False, message
                 
         except Exception as e:
             message += f"❌ Withdraw submit error: {str(e)}\n"
@@ -552,7 +563,6 @@ class SMS323Automation:
                 if result.get('code') == 1:
                     orders = result.get('data', [])
                     
-                    # IMPROVED: Better bot order tracking
                     bot_orders = []
                     all_orders_info = ""
                     
@@ -560,7 +570,6 @@ class SMS323Automation:
                         order_id = order.get('id')
                         order_key = f"{username}_{order_id}"
                         
-                        # Check if this order was submitted by bot
                         if order_key in self.bot_submitted_orders:
                             bot_orders.append(order)
                             all_orders_info += f"   ✅ BOT ORDER - ID: {order_id}, Amount: {order.get('score')}, Status: {order.get('status')}\n"
@@ -570,7 +579,6 @@ class SMS323Automation:
                     message += f"📦 Bot Orders Found: {len(bot_orders)}/{len(orders)}\n"
                     message += f"🔍 Total orders in system: {len(orders)}\n"
                     
-                    # Show all orders for transparency
                     if orders:
                         message += f"📋 All Orders Details:\n"
                         message += all_orders_info
@@ -715,7 +723,6 @@ class SMS323Automation:
         if not status_data:
             return None, "❌ No status data available for report"
         
-        # Prepare data for CSV
         csv_data = []
         headers = ['Phone Number', 'Success Orders', 'Failed Orders', 'Points', 'Recent Activity', 'Timestamp', 'Prefix']
         
@@ -740,10 +747,8 @@ class SMS323Automation:
             ]
             csv_data.append(row)
         
-        # Sort by Timestamp (newest first)
         csv_data.sort(key=lambda x: x[5] if x[5] else '', reverse=True)
         
-        # Create CSV file in memory
         output = StringIO()
         writer = csv.writer(output)
         writer.writerow(headers)
@@ -752,7 +757,6 @@ class SMS323Automation:
         csv_content = output.getvalue()
         output.close()
         
-        # Convert to bytes for file sending
         csv_bytes = BytesIO(csv_content.encode('utf-8'))
         csv_bytes.seek(0)
         
