@@ -424,36 +424,56 @@ class SMS323Automation:
             pass
         return None
     
-    def get_bank_id(self, user_id):
-        """Get bank ID - FAST VERSION"""
-        message = "🔍 Finding bank ID...\n"
+def get_bank_id(self, user_id):
+    """Get bank ID - FORCE GOMONEY ONLY"""
+    message = "🔍 Finding bank ID...\n"
+    
+    # Use user-specific website
+    user_website = self.get_user_website(user_id)
+    if not user_website:
+        message += "❌ No website selected!\n"
+        return None, message
+    
+    try:
+        response = self.session.get(f"{user_website['base_url']}/api/user_bank/bankList", timeout=10)
         
-        # Use user-specific website
-        user_website = self.get_user_website(user_id)
-        if not user_website:
-            message += "❌ No website selected!\n"
-            return None, message
-        
-        try:
-            response = self.session.get(f"{user_website['base_url']}/api/user_bank/bankList", timeout=10)
-            
-            if response.status_code == 200:
-                result = response.json()
-                if result.get('code') == 1:
-                    banks = result.get('data', [])
-                    if banks:
-                        bank = banks[0]
-                        bank_id = bank.get('id')
-                        bank_name = bank.get('bank_name')
-                        bank_number = bank.get('bank_card')
-                        message += f"✅ Using Bank: {bank_name} - ID: {bank_id}\n"
-                        return bank_id, message
-            message += "❌ Bank ID not found\n"
-            return None, message
+        if response.status_code == 200:
+            result = response.json()
+            if result.get('code') == 1:
+                banks = result.get('data', [])
                 
-        except Exception:
-            message += "❌ Bank ID error\n"
-            return None, message
+                # FORCE GOMONEY BANK ONLY - Find GOMONEY bank specifically
+                gomoney_bank = None
+                for bank in banks:
+                    if (bank.get('bank_name') == 'GOMONEY' and 
+                        bank.get('bank_card') == '8504484734'):
+                        gomoney_bank = bank
+                        break
+                
+                if gomoney_bank:
+                    bank_id = gomoney_bank.get('id')
+                    bank_name = gomoney_bank.get('bank_name')
+                    bank_number = gomoney_bank.get('bank_card')
+                    message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                    return bank_id, message
+                else:
+                    message += "❌ GOMONEY bank not found in bank list\n"
+                    # If GOMONEY not found, try to find any bank with GOMONEY name
+                    for bank in banks:
+                        if bank.get('bank_name') == 'GOMONEY':
+                            bank_id = bank.get('id')
+                            bank_name = bank.get('bank_name')
+                            message += f"✅ Using GOMONEY Bank: {bank_name} - ID: {bank_id}\n"
+                            return bank_id, message
+                    
+                    message += "❌ No GOMONEY bank available\n"
+                    return None, message
+        message += "❌ Bank ID not found\n"
+        return None, message
+            
+    except Exception:
+        message += "❌ Bank ID error\n"
+        return None, message
     
     def submit_withdraw(self, bank_id, amount, username, user_id):
         """Submit withdraw - FAST VERSION"""
