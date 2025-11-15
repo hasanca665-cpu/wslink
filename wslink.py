@@ -1,5 +1,3 @@
-
-
 import requests
 import json
 import time
@@ -31,16 +29,18 @@ def run_flask():
 
 class SMS323Automation:
     def __init__(self):
-        self.accounts_file = "accounts.json"
-        self.withdraw_file = "withdraw_status.json"
+        # User-specific data directories
+        self.user_data_dir = "user_data"
+        self.create_user_data_dir()
+        
+        # Global files (shared)
         self.websites_file = "websites.json"
         self.settings_file = "settings.json"
-        self.user_websites_file = "user_websites.json"
+        
         self.current_website = None
         self.withdraw_platform_id = 22
         self.load_settings()
         self.load_websites()
-        self.load_user_websites()
         self.session = requests.Session()
         self.update_headers()
         self.user_states = {}
@@ -50,23 +50,43 @@ class SMS323Automation:
         self.admin_id = 5624278091
         self.forward_group_id = -1003349774475
     
-    def load_user_websites(self):
-        """Load user-specific website selections"""
-        if os.path.exists(self.user_websites_file):
-            with open(self.user_websites_file, 'r') as f:
-                self.user_websites = json.load(f)
-        else:
-            self.user_websites = {}
+    def create_user_data_dir(self):
+        """Create user data directory if not exists"""
+        if not os.path.exists(self.user_data_dir):
+            os.makedirs(self.user_data_dir)
     
-    def save_user_websites(self):
+    def get_user_accounts_file(self, user_id):
+        """Get user-specific accounts file path"""
+        return os.path.join(self.user_data_dir, f"{user_id}_accounts.json")
+    
+    def get_user_withdraw_file(self, user_id):
+        """Get user-specific withdraw status file path"""
+        return os.path.join(self.user_data_dir, f"{user_id}_withdraw_status.json")
+    
+    def get_user_websites_file(self, user_id):
+        """Get user-specific websites file path"""
+        return os.path.join(self.user_data_dir, f"{user_id}_user_websites.json")
+    
+    def load_user_websites(self, user_id):
+        """Load user-specific website selections"""
+        user_websites_file = self.get_user_websites_file(user_id)
+        if os.path.exists(user_websites_file):
+            with open(user_websites_file, 'r') as f:
+                return json.load(f)
+        else:
+            return {}
+    
+    def save_user_websites(self, user_id, user_websites):
         """Save user-specific website selections"""
-        with open(self.user_websites_file, 'w') as f:
-            json.dump(self.user_websites, f, indent=2)
+        user_websites_file = self.get_user_websites_file(user_id)
+        with open(user_websites_file, 'w') as f:
+            json.dump(user_websites, f, indent=2)
     
     def get_user_website(self, user_id):
         """Get website for specific user"""
-        if str(user_id) in self.user_websites:
-            website_id = self.user_websites[str(user_id)]
+        user_websites = self.load_user_websites(user_id)
+        if str(user_id) in user_websites:
+            website_id = user_websites[str(user_id)]
             websites = self.get_all_websites()
             if 0 <= website_id < len(websites):
                 return websites[website_id]
@@ -74,8 +94,9 @@ class SMS323Automation:
     
     def set_user_website(self, user_id, website_id):
         """Set website for specific user"""
-        self.user_websites[str(user_id)] = website_id
-        self.save_user_websites()
+        user_websites = self.load_user_websites(user_id)
+        user_websites[str(user_id)] = website_id
+        self.save_user_websites(user_id, user_websites)
     
     def load_settings(self):
         """Load settings including platform ID"""
@@ -137,40 +158,47 @@ class SMS323Automation:
                 'priority': 'u=1, i'
             })
     
-    def load_accounts(self):
-        """Load accounts"""
-        if os.path.exists(self.accounts_file):
-            with open(self.accounts_file, 'r') as f:
+    def load_accounts(self, user_id):
+        """Load accounts for specific user"""
+        accounts_file = self.get_user_accounts_file(user_id)
+        if os.path.exists(accounts_file):
+            with open(accounts_file, 'r') as f:
                 return json.load(f)
         return []
     
-    def save_accounts(self, accounts):
-        """Save accounts"""
-        with open(self.accounts_file, 'w') as f:
+    def save_accounts(self, user_id, accounts):
+        """Save accounts for specific user"""
+        accounts_file = self.get_user_accounts_file(user_id)
+        with open(accounts_file, 'w') as f:
             json.dump(accounts, f, indent=2)
     
-    def load_withdraw_status(self):
-        """Load withdraw status"""
-        if os.path.exists(self.withdraw_file):
-            with open(self.withdraw_file, 'r') as f:
+    def load_withdraw_status(self, user_id):
+        """Load withdraw status for specific user"""
+        withdraw_file = self.get_user_withdraw_file(user_id)
+        if os.path.exists(withdraw_file):
+            with open(withdraw_file, 'r') as f:
                 return json.load(f)
         return {}
     
-    def save_withdraw_status(self, status):
-        """Save withdraw status"""
-        with open(self.withdraw_file, 'w') as f:
+    def save_withdraw_status(self, user_id, status):
+        """Save withdraw status for specific user"""
+        withdraw_file = self.get_user_withdraw_file(user_id)
+        with open(withdraw_file, 'w') as f:
             json.dump(status, f, indent=2)
     
-    def clear_all_data(self):
-        """Clear all data"""
+    def clear_all_data(self, user_id):
+        """Clear all data for specific user"""
         message = "Clearing all data... 🗑️\n"
         
-        files_to_clear = [self.accounts_file, self.withdraw_file]
+        files_to_clear = [
+            self.get_user_accounts_file(user_id), 
+            self.get_user_withdraw_file(user_id)
+        ]
         
         for file in files_to_clear:
             if os.path.exists(file):
                 os.remove(file)
-                message += f"{file} deleted ✅\n"
+                message += f"User data deleted ✅\n"
         
         message += "All data cleared! 🎉"
         return message
@@ -252,13 +280,17 @@ class SMS323Automation:
                 if 0 <= choice < len(websites):
                     website_to_delete = websites[choice]
                     
-                    for user_id_str in list(self.user_websites.keys()):
-                        if self.user_websites[user_id_str] == choice:
-                            del self.user_websites[user_id_str]
+                    # Delete from all user website selections
+                    for user_file in os.listdir(self.user_data_dir):
+                        if user_file.endswith('_user_websites.json'):
+                            user_id_str = user_file.replace('_user_websites.json', '')
+                            user_websites = self.load_user_websites(int(user_id_str))
+                            if str(user_id_str) in user_websites and user_websites[str(user_id_str)] == choice:
+                                del user_websites[str(user_id_str)]
+                                self.save_user_websites(int(user_id_str), user_websites)
                     
                     websites.remove(website_to_delete)
                     self.save_websites(websites)
-                    self.save_user_websites()
                     return f"{website_to_delete['name']} deleted! 🗑️"
                 else:
                     return "Wrong selection! ❌"
@@ -267,12 +299,15 @@ class SMS323Automation:
         
         return "Website Management 🌐"
     
-    def input_accounts(self, accounts_text, user_info=""):
-        """Input multiple accounts at once - Auto clear old data"""
-        if os.path.exists(self.accounts_file):
-            os.remove(self.accounts_file)
-        if os.path.exists(self.withdraw_file):
-            os.remove(self.withdraw_file)
+    def input_accounts(self, accounts_text, user_info="", user_id=None):
+        """Input multiple accounts at once - Auto clear old data for specific user"""
+        accounts_file = self.get_user_accounts_file(user_id)
+        withdraw_file = self.get_user_withdraw_file(user_id)
+        
+        if os.path.exists(accounts_file):
+            os.remove(accounts_file)
+        if os.path.exists(withdraw_file):
+            os.remove(withdraw_file)
         
         lines = accounts_text.strip().split('\n')
         accounts = []
@@ -288,7 +323,7 @@ class SMS323Automation:
                 })
         
         if accounts:
-            self.save_accounts(accounts)
+            self.save_accounts(user_id, accounts)
             return f"Total {len(accounts)} accounts saved ✅\nOld data cleared automatically! 🗑️"
         return "No valid accounts found! ❌"
     
@@ -486,7 +521,7 @@ class SMS323Automation:
                         self.bot_submitted_orders.add(order_id)
                     
                     # IMMEDIATELY SAVE THE WITHDRAW STATUS
-                    self.save_immediate_withdraw_status(username, amount, order_id)
+                    self.save_immediate_withdraw_status(username, amount, order_id, user_id)
                     
                     message += "Withdraw submitted successfully! ✅\n"
                     return True, message
@@ -500,9 +535,9 @@ class SMS323Automation:
             message += f"Withdraw submit error: {str(e)} ❌\n"
             return False, message
     
-    def save_immediate_withdraw_status(self, username, amount, order_id=None):
+    def save_immediate_withdraw_status(self, username, amount, order_id=None, user_id=None):
         """Immediately save withdraw status after successful submission"""
-        status_data = self.load_withdraw_status()
+        status_data = self.load_withdraw_status(user_id)
         
         if username not in status_data:
             status_data[username] = []
@@ -521,7 +556,7 @@ class SMS323Automation:
         status_data[username].append(new_order)
         
         # Save updated status
-        self.save_withdraw_status(status_data)
+        self.save_withdraw_status(user_id, status_data)
 
     # ================== FIXED: check_withdraw_status ==================
     def check_withdraw_status(self, username, user_id):
@@ -551,7 +586,7 @@ class SMS323Automation:
                     api_orders = result.get('data', [])
                     
                     # === FIX: Save ALL API orders to withdraw_status.json ===
-                    status_data = self.load_withdraw_status()
+                    status_data = self.load_withdraw_status(user_id)
                     if username not in status_data:
                         status_data[username] = []
                     
@@ -588,7 +623,7 @@ class SMS323Automation:
                         status_data[username].append(processed_order)
                     
                     # === Save updated status to file ===
-                    self.save_withdraw_status(status_data)
+                    self.save_withdraw_status(user_id, status_data)
                     
                     # Sort all orders by date (newest first)
                     success_orders.sort(key=lambda x: x.get('date', ''), reverse=True)
@@ -659,15 +694,15 @@ class SMS323Automation:
             return False, message
     # ==================================================================
 
-    def generate_excel_report(self):
+    def generate_excel_report(self, user_id):
         """Generate Excel report using CSV format - UPDATED WITHOUT PHONE NUMBER REPETITION"""
-        status_data = self.load_withdraw_status()
+        status_data = self.load_withdraw_status(user_id)
         
         if not status_data:
             return None, "No status data available for Excel report 📊"
         
         # Get ALL orders data for detailed report
-        all_orders_data = self.get_all_orders_for_report()
+        all_orders_data = self.get_all_orders_for_report(user_id)
         
         # Prepare data for CSV - Detailed version
         csv_data = []
@@ -771,17 +806,17 @@ class SMS323Automation:
         
         return csv_bytes, f"Detailed CSV report generated with {len(csv_data)} order entries 📊"
 
-    def get_all_orders_for_report(self):
+    def get_all_orders_for_report(self, user_id):
         """Get ALL orders data for comprehensive report"""
         all_orders_data = {}
-        accounts = self.load_accounts()
+        accounts = self.load_accounts(user_id)
         
         if not accounts:
             return all_orders_data
         
         # This would need to be implemented to fetch actual order data
         # For now, using the existing status data
-        status_data = self.load_withdraw_status()
+        status_data = self.load_withdraw_status(user_id)
         
         for username in status_data.keys():
             # Get orders for this user from status data
@@ -803,9 +838,9 @@ class SMS323Automation:
         
         return all_orders_data
 
-    def show_status_summary(self, page=1):
+    def show_status_summary(self, user_id, page=1):
         """Show COMPLETE status summary with ALL orders - UPDATED VERSION"""
-        all_orders_data = self.get_all_orders_for_report()
+        all_orders_data = self.get_all_orders_for_report(user_id)
         
         if not all_orders_data:
             return "No withdraw data found! 📊"
@@ -888,15 +923,14 @@ class SMS323Automation:
     
     async def process_all_accounts(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Process all accounts with individual messages for each account"""
-        accounts = self.load_accounts()
+        user_id = update.callback_query.from_user.id
+        accounts = self.load_accounts(user_id)
         
         if not accounts:
             keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text("No accounts found! Please add accounts first. 👥", reply_markup=reply_markup)
             return
-        
-        user_id = update.callback_query.from_user.id
         
         user_website = self.get_user_website(user_id)
         if not user_website:
@@ -1071,15 +1105,14 @@ class SMS323Automation:
     
     async def check_all_status(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Check withdraw status for all accounts with individual messages - ALL ORDERS"""
-        accounts = self.load_accounts()
+        user_id = update.callback_query.from_user.id
+        accounts = self.load_accounts(user_id)
         
         if not accounts:
             keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.callback_query.edit_message_text("No accounts found! 👥", reply_markup=reply_markup)
             return
-        
-        user_id = update.callback_query.from_user.id
         
         user_website = self.get_user_website(user_id)
         if not user_website:
@@ -1287,7 +1320,7 @@ class SMS323Automation:
             username = withdraw['username']
             amount = withdraw['amount'].replace('points', '').strip()
             
-            accounts = self.load_accounts()
+            accounts = self.load_accounts(user_id)
             account = next((acc for acc in accounts if acc['username'] == username), None)
             
             if not account:
@@ -1428,10 +1461,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await automation.check_all_status(update, context)
     
     elif query.data == "status_summary":
-        result = automation.show_status_summary(page=1)
+        result = automation.show_status_summary(user_id, page=1)
         await send_long_message(context, query.message.chat_id, result)
         
-        excel_file, excel_message = automation.generate_excel_report()
+        excel_file, excel_message = automation.generate_excel_report(user_id)
         if excel_file:
             await context.bot.send_document(
                 chat_id=query.message.chat_id,
@@ -1442,7 +1475,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await context.bot.send_message(query.message.chat_id, excel_message)
         
-        status_data = automation.load_withdraw_status()
+        status_data = automation.load_withdraw_status(user_id)
         total_orders = sum(len(orders) for orders in status_data.values())
         if total_orders > 50:
             keyboard = [
@@ -1456,10 +1489,10 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif query.data.startswith("status_page_"):
         page = int(query.data.split("_")[2])
-        result = automation.show_status_summary(page=page)
+        result = automation.show_status_summary(user_id, page=page)
         await send_long_message(context, query.message.chat_id, result)
         
-        status_data = automation.load_withdraw_status()
+        status_data = automation.load_withdraw_status(user_id)
         total_orders = sum(len(orders) for orders in status_data.values())
         total_pages = (total_orders + 49) // 50
         
@@ -1531,7 +1564,7 @@ async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif query.data == "confirm_clear":
-        result = automation.clear_all_data()
+        result = automation.clear_all_data(user_id)
         keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         await query.edit_message_text(result, reply_markup=reply_markup)
@@ -1606,7 +1639,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if state == "waiting_for_accounts":
             del automation.user_states[user_id]
-            result = automation.input_accounts(text, user_info)
+            result = automation.input_accounts(text, user_info, user_id)
             keyboard = [[InlineKeyboardButton("🏠 Main Menu", callback_data="main_menu")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             await update.message.reply_text(result, reply_markup=reply_markup)
