@@ -981,8 +981,8 @@ class SMS323Automation:
             balance, balance_msg = self.get_user_info(user_id)
             account_message += balance_msg
             
-            if balance <= 200:
-                account_message += "❌ Insufficient balance\n"
+            if balance <= 1200:
+                account_message += "❌ Insufficient balance (Minimum 1200 required, available: {balance})\n"
                 failed_details.append(f"{username} - Insufficient balance ({balance} points) ❌")
                 keyboard = [[InlineKeyboardButton("Main Menu", callback_data="main_menu")]]
                 reply_markup = InlineKeyboardMarkup(keyboard)
